@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Left Modern Building / Tower -->
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M34,44 L44,44 L44,76 L34,76 Z" />
+    <!-- Building windows -->
+    <path
+        android:fillColor="#0A192F"
+        android:pathData="M36,48 h3 v3 h-3 z M36,54 h3 v3 h-3 z M36,60 h3 v3 h-3 z M36,66 h3 v3 h-3 z" />
+
+    <!-- Center Luxury House Roof & Body -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M54,28 L78,48 L73,48 L73,76 L59,76 L59,62 L49,62 L49,76 L44,76 L44,48 L39,48 Z" />
+
+    <!-- Center House Door & Golden Arch Accent -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,64 L57,64 L57,76 L51,76 Z" />
+
+    <!-- Right Modern Skyline Accent -->
+    <path
+        android:fillColor="#60A5FA"
+        android:pathData="M73,52 L80,52 L80,76 L73,76 Z" />
+    <path
+        android:fillColor="#0A192F"
+        android:pathData="M75,56 h2 v3 h-2 z M75,62 h2 v3 h-2 z M75,68 h2 v3 h-2 z" />
+
+    <!-- Key & Sparkle Luxury Real Estate Symbol -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M54,38 L56,43 L61,43 L57,46 L59,51 L54,48 L49,51 L51,46 L47,43 L52,43 Z" />
+
+    <!-- Base Horizon Line -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,76 L84,76 L84,78 L30,78 Z" />
+</vector>

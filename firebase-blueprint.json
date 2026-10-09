@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Auth UID" },
+        "fullName": { "type": "string", "description": "Full name of the user" },
+        "phoneNumber": { "type": "string", "description": "Verified phone number" },
+        "email": { "type": "string", "description": "Email address" },
+        "language": { "type": "string", "enum": ["en", "hi"], "description": "Preferred language" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["userId", "fullName", "phoneNumber", "createdAt"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Real estate property listing",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Auth UID" },
+        "title": { "type": "string", "description": "Property title" },
+        "listingType": { "type": "string", "enum": ["RENT", "SALE", "PLOT", "COMMERCIAL"] },
+        "propertyType": { "type": "string", "description": "Category of property" },
+        "bhk": { "type": "string", "description": "BHK configuration" },
+        "locality": { "type": "string", "description": "Locality or sector" },
+        "city": { "type": "string", "description": "City" },
+        "price": { "type": "number", "description": "Price in INR" },
+        "priceDisplay": { "type": "string", "description": "Formatted price string" },
+        "areaGaj": { "type": "number", "description": "Area in Gaj" },
+        "carpetAreaSqFt": { "type": "number", "description": "Carpet area in sq ft" },
+        "furnishing": { "type": "string", "description": "Furnishing condition" },
+        "isVerified": { "type": "boolean", "description": "Verification status" },
+        "ownerName": { "type": "string", "description": "Listing owner name" },
+        "ownerPhone": { "type": "string", "description": "Listing owner phone" },
+        "description": { "type": "string", "description": "Property detailed text" },
+        "status": { "type": "string", "enum": ["ACTIVE", "UNDER_REVIEW", "EXPIRED", "SOLD"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "listingType", "locality", "price", "createdAt"]
+    },
+    "LoanLead": {
+      "title": "LoanLead",
+      "description": "Customer loan assistance application",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Applicant UID" },
+        "clientName": { "type": "string", "description": "Applicant full name" },
+        "phoneNumber": { "type": "string", "description": "Contact number" },
+        "loanTypeSelected": { "type": "string", "enum": ["LAP", "HOME_LOAN", "PURCHASE_5L"] },
+        "requiredAmountInLakhs": { "type": "number", "description": "Required amount in Lakhs" },
+        "employmentType": { "type": "string", "description": "Employment status" },
+        "monthlyIncome": { "type": "string", "description": "Monthly income string" },
+        "propertyStatus": { "type": "string", "description": "Property purchase status" },
+        "city": { "type": "string", "description": "Applicant locality/city" },
+        "status": { "type": "string", "enum": ["PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED"] },
+        "referenceId": { "type": "string", "description": "Unique reference ID" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientName", "phoneNumber", "loanTypeSelected", "requiredAmountInLakhs", "createdAt"]
+    },
+    "BookedMeeting": {
+      "title": "BookedMeeting",
+      "description": "Booked appointment with partner agent",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User UID" },
+        "partnerId": { "type": "string", "description": "Partner ID" },
+        "partnerName": { "type": "string", "description": "Partner name" },
+        "partnerPhone": { "type": "string", "description": "Partner phone" },
+        "scheduledDate": { "type": "string", "description": "Appointment date" },
+        "timeSlot": { "type": "string", "description": "Time slot" },
+        "propertyInterest": { "type": "string", "description": "Interest notes" },
+        "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "partnerId", "scheduledDate", "timeSlot", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile collection"
+    },
+    "/properties/{propertyId}": {
+      "schema": "Property",
+      "description": "Public property marketplace listings"
+    },
+    "/loan_leads/{leadId}": {
+      "schema": "LoanLead",
+      "description": "Loan assistance leads"
+    },
+    "/booked_meetings/{meetingId}": {
+      "schema": "BookedMeeting",
+      "description": "Scheduled appointments with partners"
+    }
+  }
+}

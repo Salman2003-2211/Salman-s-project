@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100 &&
+             data.phoneNumber is string && data.phoneNumber.size() >= 8 && data.phoneNumber.size() <= 20 &&
+             (!('email' in data) || data.email is string) &&
+             (!('language' in data) || data.language in ['en', 'hi']) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidProperty(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
+             data.listingType in ['RENT', 'SALE', 'PLOT', 'COMMERCIAL'] &&
+             data.locality is string && data.locality.size() <= 100 &&
+             data.price is number && data.price > 0 &&
+             (!('bhk' in data) || (data.bhk is string && data.bhk.size() <= 20)) &&
+             (!('propertyType' in data) || (data.propertyType is string && data.propertyType.size() <= 50)) &&
+             (!('status' in data) || data.status in ['ACTIVE', 'UNDER_REVIEW', 'EXPIRED', 'SOLD']) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidLoanLead(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.clientName is string && data.clientName.size() >= 2 && data.clientName.size() <= 100 &&
+             data.phoneNumber is string && data.phoneNumber.size() >= 8 && data.phoneNumber.size() <= 20 &&
+             data.loanTypeSelected in ['LAP', 'HOME_LOAN', 'PURCHASE_5L'] &&
+             data.requiredAmountInLakhs is number && data.requiredAmountInLakhs > 0 &&
+             (!('status' in data) || data.status in ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED']) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidMeeting(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.partnerId is string && data.partnerId.size() <= 100 &&
+             data.scheduledDate is string && data.scheduledDate.size() <= 50 &&
+             data.timeSlot is string && data.timeSlot.size() <= 30 &&
+             (!('status' in data) || data.status in ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED']) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // 1. User Profiles
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt && isValidUserProfile(incoming());
+      allow delete: if isOwner(userId);
+    }
+
+    // 2. Properties
+    match /properties/{propertyId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidProperty(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == existing().userId && isValidProperty(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 3. Loan Leads
+    match /loan_leads/{leadId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com');
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com');
+      allow create: if isSignedIn() && isValidLoanLead(incoming());
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com') && isValidLoanLead(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 4. Booked Meetings
+    match /booked_meetings/{meetingId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidMeeting(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidMeeting(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+  }
+}

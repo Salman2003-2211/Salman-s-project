@@ -1,0 +1,6 @@
+{
+  "name": "S.P.A.RE",
+  "description": "Comprehensive real estate platform for property discovery, post property, loan assistance, partner network, and lead management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
