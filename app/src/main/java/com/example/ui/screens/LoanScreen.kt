@@ -54,7 +54,7 @@ fun LoanScreen(
     var employmentType by remember { mutableStateOf("Salaried") }
     var monthlyIncome by remember { mutableStateOf("₹85,000 / month") }
     var propertyStatus by remember { mutableStateOf("Shortlisted") }
-    var city by remember { mutableStateOf("Noida") }
+    var city by remember { mutableStateOf("") }
     var lastSubmittedLead by remember { mutableStateOf<LoanLead?>(null) }
     var showOperatorDashboard by remember { mutableStateOf(false) }
 
@@ -208,7 +208,7 @@ fun Screen1LoanTypeSelection(
             loanType = LoanType.LAP,
             isSelected = selectedType == LoanType.LAP,
             icon = Icons.Filled.HomeWork,
-            badge = "UP TO ₹10 CR",
+            badge = "UP TO ₹1 CR",
             onClick = { onSelectType(LoanType.LAP) }
         )
 
@@ -423,7 +423,7 @@ fun Screen2RequirementForm(
                 ) {
                     Text("Required Loan Amount", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        text = if (amountLakhs >= 100f) "₹${String.format("%.2f", amountLakhs / 100f)} Cr" else "₹${amountLakhs.roundToInt()} Lakh",
+                        text = if (amountLakhs >= 100f) "₹1.00 Cr (Max Limit)" else "₹${amountLakhs.roundToInt()} Lakh",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Color(0xFF0F766E)
@@ -433,9 +433,9 @@ fun Screen2RequirementForm(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Slider(
-                    value = amountLakhs,
-                    onValueChange = onAmountChange,
-                    valueRange = 5f..500f,
+                    value = amountLakhs.coerceIn(5f, 100f),
+                    onValueChange = { onAmountChange(it.coerceIn(5f, 100f)) },
+                    valueRange = 5f..100f,
                     colors = SliderDefaults.colors(
                         thumbColor = Color(0xFF2563EB),
                         activeTrackColor = Color(0xFF2563EB)
@@ -447,8 +447,76 @@ fun Screen2RequirementForm(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("₹5 Lakh", fontSize = 11.sp, color = Color(0xFF94A3B8))
-                    Text("₹5 Crore", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                    Text("₹5 Lakh (Min)", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                    Text("₹1 Crore (Max Limit)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick preset buttons up to 1 Crore
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        10f to "₹10L",
+                        25f to "₹25L",
+                        50f to "₹50L",
+                        75f to "₹75L",
+                        100f to "₹1 Cr"
+                    ).forEach { (amt, label) ->
+                        val isSel = (amountLakhs.roundToInt() == amt.roundToInt())
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSel) Color(0xFF2563EB) else Color(0xFFF1F5F9),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onAmountChange(amt) }
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSel) Color.White else Color(0xFF334155),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Estimated EMI calculation
+                val principal = amountLakhs.coerceIn(5f, 100f) * 100000.0
+                val monthlyRate = 0.085 / 12.0
+                val tenureMonths = 240 // 20 years
+                val emi = (principal * monthlyRate * Math.pow(1.0 + monthlyRate, tenureMonths.toDouble())) /
+                        (Math.pow(1.0 + monthlyRate, tenureMonths.toDouble()) - 1.0)
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFECFDF5),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Calculate,
+                            contentDescription = null,
+                            tint = Color(0xFF059669),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Est. EMI: ₹${String.format("%,.0f", emi)}/mo @ 8.5% p.a. (20 yrs)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF065F46)
+                        )
+                    }
                 }
             }
         }

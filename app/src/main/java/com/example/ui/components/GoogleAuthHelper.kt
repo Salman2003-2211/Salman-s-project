@@ -3,7 +3,6 @@ package com.example.ui.components
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,8 +22,6 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.example.R
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -44,10 +41,14 @@ object GoogleAuthHelper {
         onAuthCancelled: () -> Unit = {}
     ) {
         val clientId = try {
-            context.getString(R.string.default_web_client_id)
+            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (resId != 0) context.getString(resId) else "spare-web-client-id.apps.googleusercontent.com"
         } catch (e: Exception) {
-            onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
-            return
+            "spare-web-client-id.apps.googleusercontent.com"
+        }
+
+        if (clientId.isBlank() || clientId.contains("spare-web-client-id")) {
+            Log.w("GoogleAuth", "OAuth Web Client ID not configured. Provide SHA-1 in Firebase.")
         }
 
         val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()

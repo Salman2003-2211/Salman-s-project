@@ -1,7 +1,18 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Bitmap
+import android.location.Geocoder
+import android.location.Location
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,19 +33,36 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.model.ListingType
 import com.example.model.Property
 import com.example.model.PropertyStatus
 import com.example.ui.AppTab
 import com.example.ui.ScreenOverlay
 import com.example.ui.SpareViewModel
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+data class PropertyPhotoItem(
+    val id: String,
+    val uri: Uri? = null,
+    val bitmap: Bitmap? = null,
+    val name: String
+)
+
+@SuppressLint("MissingPermission")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostPropertyScreen(
@@ -42,6 +70,7 @@ fun PostPropertyScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val userProfile by viewModel.userProfile.collectAsState()
 
     var currentStep by remember { mutableIntStateOf(1) } // 1..7
@@ -56,38 +85,124 @@ fun PostPropertyScreen(
     var plotSize by remember { mutableStateOf("150") }
     var plotUnit by remember { mutableStateOf("Gaj / Sq. Yards") }
 
-    // Step 3: Location
-    var localitySearch by remember { mutableStateOf("Sector 62, Noida") }
-    var streetAddress by remember { mutableStateOf("Tower B, Plot 42") }
-    var cityName by remember { mutableStateOf("Noida") }
-    var pincode by remember { mutableStateOf("201309") }
+    // Step 3: Location (Fresh, not hardcoded)
+    var localitySearch by remember { mutableStateOf("") }
+    var streetAddress by remember { mutableStateOf("") }
+    var cityName by remember { mutableStateOf("") }
+    var pincode by remember { mutableStateOf("") }
+    var detectedLatitude by remember { mutableDoubleStateOf(28.6280) }
+    var detectedLongitude by remember { mutableDoubleStateOf(77.3649) }
+    var isDetectingLocation by remember { mutableStateOf(false) }
 
-    // Step 4: Photos
-    var uploadedPhotos by remember {
-        mutableStateOf(
-            listOf("Exterior Front View", "Living Area & Balcony", "Master Bedroom")
-        )
+    // Step 4: Photos (Fresh list)
+    var uploadedPhotos by remember { mutableStateOf(listOf<PropertyPhotoItem>()) }
+    var showPhotoSourceSheet by remember { mutableStateOf(false) }
+
+    // Photo Launchers
+    val galleryPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 5)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val newItems = uris.mapIndexed { idx, uri ->
+                PropertyPhotoItem(
+                    id = "gallery_${System.currentTimeMillis()}_$idx",
+                    uri = uri,
+                    name = "Gallery Photo ${uploadedPhotos.size + idx + 1}"
+                )
+            }
+            uploadedPhotos = (uploadedPhotos + newItems).take(8)
+            Toast.makeText(context, "${uris.size} photo(s) selected from Gallery", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            val newItem = PropertyPhotoItem(
+                id = "camera_${System.currentTimeMillis()}",
+                bitmap = bitmap,
+                name = "Camera Capture ${uploadedPhotos.size + 1}"
+            )
+            uploadedPhotos = (uploadedPhotos + newItem).take(8)
+            Toast.makeText(context, "Photo captured from Camera", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // GPS Location function
+    fun detectDeviceLocation() {
+        isDetectingLocation = true
+        val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+        fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { location: Location? ->
+                if (location != null) {
+                    detectedLatitude = location.latitude
+                    detectedLongitude = location.longitude
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val geocoder = Geocoder(context, Locale.getDefault())
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                            withContext(Dispatchers.Main) {
+                                isDetectingLocation = false
+                                if (!addresses.isNullOrEmpty()) {
+                                    val addr = addresses[0]
+                                    localitySearch = addr.subLocality ?: addr.locality ?: "${String.format("%.4f", location.latitude)}, ${String.format("%.4f", location.longitude)}"
+                                    cityName = addr.locality ?: addr.subAdminArea ?: "Delhi NCR"
+                                    pincode = addr.postalCode ?: ""
+                                    streetAddress = addr.thoroughfare ?: addr.featureName ?: ""
+                                    Toast.makeText(context, "Current location detected: $localitySearch", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    localitySearch = "GPS: ${String.format("%.4f", location.latitude)}, ${String.format("%.4f", location.longitude)}"
+                                    Toast.makeText(context, "Coordinates captured from GPS", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                isDetectingLocation = false
+                                localitySearch = "GPS: ${String.format("%.4f", location.latitude)}, ${String.format("%.4f", location.longitude)}"
+                                Toast.makeText(context, "Location coordinates detected via GPS", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    isDetectingLocation = false
+                    Toast.makeText(context, "Unable to get GPS fix. Please ensure Location is enabled in phone settings.", Toast.LENGTH_LONG).show()
+                }
+            }
+            .addOnFailureListener { e ->
+                isDetectingLocation = false
+                Toast.makeText(context, "GPS detection failed: ${e.localizedMessage}. Enter location manually.", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            detectDeviceLocation()
+        } else {
+            Toast.makeText(context, "Location permission denied. Please enter address manually.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Step 5: Description & Highlights
-    var title by remember { mutableStateOf("Spacious 2 BHK Builder Floor with Park View") }
-    var description by remember {
-        mutableStateOf("Brand new ready to move builder floor with modular kitchen, 40ft wide road, 24/7 sweet water supply, close to metro station and reputed schools.")
-    }
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
     var selectedFeatureTags by remember {
         mutableStateOf(setOf("Gated Society", "Park Facing", "24/7 Water", "Near Metro"))
     }
 
     // Step 6: Pricing
-    var rentAmount by remember { mutableStateOf("24000") }
-    var securityDeposit by remember { mutableStateOf("48000") }
+    var rentAmount by remember { mutableStateOf("") }
+    var securityDeposit by remember { mutableStateOf("") }
     var maintenanceType by remember { mutableStateOf("Included") }
-    var salePriceLakhs by remember { mutableStateOf("75") }
+    var salePriceLakhs by remember { mutableStateOf("") }
     var isNegotiable by remember { mutableStateOf(true) }
 
     var validationError by remember { mutableStateOf<String?>(null) }
-    var isSubmitted by remember { mutableStateOf(false) }
-
     val scrollState = rememberScrollState()
 
     Scaffold(
@@ -134,28 +249,34 @@ fun PostPropertyScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             when (currentStep) {
-                // ==================== STEP 1: LISTING TYPE ====================
+                // ==================== STEP 1: LISTING PURPOSE ====================
                 1 -> {
-                    Text("Step 1: Listing Type", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Select what you want to do with your property.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Step 1: What do you want to do?", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Select your listing category.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 18.dp))
 
-                    listOf(
-                        Triple(ListingType.RENT, "Rent / Lease", "Find verified tenants for apartments or commercial spaces."),
-                        Triple(ListingType.SALE, "Sale", "Sell residential houses, builder floors, or luxury villas."),
-                        Triple(ListingType.PLOT, "Plot / Land", "List residential, agricultural, or commercial plots in Gaj.")
-                    ).forEach { (type, label, desc) ->
+                    val listingChoices = listOf(
+                        ListingType.RENT to ("Rent / Lease" to Icons.Filled.Key),
+                        ListingType.SALE to ("Sell Property" to Icons.Filled.Sell),
+                        ListingType.PLOT to ("Plot / Land" to Icons.Filled.Landscape),
+                        ListingType.COMMERCIAL to ("Commercial" to Icons.Filled.Business)
+                    )
+
+                    listingChoices.forEach { (type, pair) ->
+                        val (label, icon) = pair
+                        val isSelected = listingType == type
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(vertical = 6.dp)
                                 .clickable { listingType = type }
-                                .padding(vertical = 6.dp),
+                                .testTag("listing_type_${type.name}"),
                             shape = RoundedCornerShape(14.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (listingType == type) Color(0xFFEFF6FF) else MaterialTheme.colorScheme.surface
+                                containerColor = if (isSelected) Color(0xFFEFF6FF) else MaterialTheme.colorScheme.surface
                             ),
                             border = androidx.compose.foundation.BorderStroke(
-                                width = if (listingType == type) 2.dp else 1.dp,
-                                color = if (listingType == type) Color(0xFF2563EB) else Color(0xFFE2E8F0)
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) Color(0xFF2563EB) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                             )
                         ) {
                             Row(
@@ -164,36 +285,48 @@ fun PostPropertyScreen(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Color(0xFF2563EB) else Color(0xFFF1F5F9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint = if (isSelected) Color.White else Color(0xFF64748B),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 RadioButton(
-                                    selected = listingType == type,
+                                    selected = isSelected,
                                     onClick = { listingType = type },
                                     colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF2563EB))
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(label, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text(desc, fontSize = 12.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp))
-                                }
                             }
                         }
                     }
                 }
 
-                // ==================== STEP 2: DYNAMIC PROPERTY DETAILS ====================
+                // ==================== STEP 2: PROPERTY CONFIGURATION ====================
                 2 -> {
-                    Text("Step 2: Property Specifications", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Tell us more about the size and configuration.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Step 2: Property Type & Specs", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Configure layout and size details.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 18.dp))
 
-                    if (listingType == ListingType.RENT || listingType == ListingType.SALE) {
+                    if (listingType != ListingType.PLOT) {
                         Text("BHK Configuration", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf("1 RK", "1 BHK", "2 BHK", "3 BHK", "4 BHK", "4+ BHK").forEach { bhk ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("1 RK", "1 BHK", "2 BHK", "3 BHK", "4+ BHK").forEach { bhk ->
                                 FilterChip(
                                     selected = bhkType == bhk,
                                     onClick = { bhkType = bhk },
@@ -202,17 +335,12 @@ fun PostPropertyScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
                         Text("Property Type", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf("Apartment", "Builder Floor", "Independent House", "Villa").forEach { pType ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Apartment", "Builder Floor", "Independent Villa", "Penthouse", "Studio").forEach { pType ->
                                 FilterChip(
                                     selected = propertyType == pType,
                                     onClick = { propertyType = pType },
@@ -221,111 +349,93 @@ fun PostPropertyScreen(
                             }
                         }
                     } else {
-                        // Plot / Land
-                        Text("Plot Purpose", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        // Plot specifics (Gaj selection)
+                        Text("Plot Details (Gaj / Area Selection)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text("Popular Plot Sizes in Gaj", fontSize = 12.sp, color = Color(0xFF64748B))
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("Sale", "Lease / Rent").forEach { purpose ->
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("50 Gaj", "100 Gaj", "150 Gaj", "200 Gaj", "300 Gaj", "500 Gaj").forEach { gaj ->
+                                val num = gaj.split(" ")[0]
                                 FilterChip(
-                                    selected = plotPurpose == purpose,
-                                    onClick = { plotPurpose = purpose },
-                                    label = { Text(purpose, fontSize = 12.sp) }
+                                    selected = plotSize == num,
+                                    onClick = { plotSize = num },
+                                    label = { Text(gaj, fontWeight = FontWeight.Bold) }
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        Text("Plot Size & Measuring Unit", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = plotSize,
+                            onValueChange = { plotSize = it },
+                            label = { Text("Custom Area Size (Gaj)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = plotSize,
-                                onValueChange = { plotSize = it },
-                                label = { Text("Area Size") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            OutlinedTextField(
-                                value = plotUnit,
-                                onValueChange = { plotUnit = it },
-                                label = { Text("Unit") },
-                                readOnly = true,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                        }
+                            shape = RoundedCornerShape(10.dp)
+                        )
                     }
                 }
 
-                // ==================== STEP 3: LOCATION SELECTION ====================
+                // ==================== STEP 3: LOCATION SELECTION (FRESH & GPS AUTO-DETECT) ====================
                 3 -> {
                     Text("Step 3: Location Selection", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Pinpoint your property location on the map.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Enter location or auto-detect using GPS.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+
+                    // GPS Auto Detect Button (Prominent)
+                    Button(
+                        onClick = {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        },
+                        enabled = !isDetectingLocation,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("detect_gps_location_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
+                    ) {
+                        if (isDetectingLocation) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Detecting current GPS location...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Filled.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Auto-Detect My Current Location (GPS)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
                         value = localitySearch,
-                        onValueChange = { localitySearch = it },
-                        label = { Text("Locality / Sector") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Color(0xFF2563EB)) },
+                        onValueChange = {
+                            localitySearch = it
+                            validationError = null
+                        },
+                        label = { Text("Locality / Sector / Area *") },
+                        placeholder = { Text("Enter locality (e.g., Sector 62, Indirapuram, Malviya Nagar)") },
+                        leadingIcon = { Icon(Icons.Filled.LocationCity, contentDescription = null, tint = Color(0xFF2563EB)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Interactive Map Pin Canvas Box
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(160.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E8F0))
-                    ) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(Icons.Filled.LocationOn, contentDescription = "Pin", tint = Color(0xFFEF4444), modifier = Modifier.size(44.dp))
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text("Map Pin set at: $localitySearch", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text("Drag pin or click below to adjust location coordinates.", fontSize = 11.sp, color = Color(0xFF64748B))
-                            }
-
-                            Button(
-                                onClick = {
-                                    localitySearch = "Sector 62, Electronic City, Noida"
-                                    Toast.makeText(context, "Current GPS location pinned!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(10.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Filled.MyLocation, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Use Current Location", fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
                     Text("Address Breakdown", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = streetAddress,
                         onValueChange = { streetAddress = it },
-                        label = { Text("Street / Flat / Plot No.") },
+                        label = { Text("Street / Building / Plot No. (Optional)") },
+                        placeholder = { Text("e.g., Tower B, Plot 42, Flat 301") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
@@ -337,29 +447,27 @@ fun PostPropertyScreen(
                         OutlinedTextField(
                             value = cityName,
                             onValueChange = { cityName = it },
-                            label = { Text("City") },
+                            label = { Text("City *") },
+                            placeholder = { Text("e.g., Noida, Delhi") },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp)
                         )
                         OutlinedTextField(
                             value = pincode,
-                            onValueChange = { pincode = it },
+                            onValueChange = { if (it.length <= 6) pincode = it },
                             label = { Text("Pincode") },
+                            placeholder = { Text("e.g., 201301") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp)
                         )
                     }
-                }
 
-                // ==================== STEP 4: MEDIA / PHOTO UPLOAD ====================
-                4 -> {
-                    Text("Step 4: Media & Photos", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Properties with 3+ photos get 5x more buyer inquiries.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Guideline card
+                    // Location Pin Confirmation Card
                     Surface(
-                        color = Color(0xFFEFF6FF),
+                        color = Color(0xFFF1F5F9),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -367,10 +475,41 @@ fun PostPropertyScreen(
                             modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.TipsAndUpdates, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = if (localitySearch.isNotBlank()) "Pin: $localitySearch${if (cityName.isNotBlank()) ", $cityName" else ""}" else "No location entered yet",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = if (localitySearch.isNotBlank()) Color(0xFF1E293B) else Color(0xFF64748B)
+                                )
+                                Text(
+                                    text = "Lat: ${String.format("%.4f", detectedLatitude)}, Lng: ${String.format("%.4f", detectedLongitude)}",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ==================== STEP 4: MEDIA & PHOTO UPLOAD (GALLERY & CAMERA) ====================
+                4 -> {
+                    Text("Step 4: Media & Photos", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Select photos from your Gallery or capture using Camera.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 14.dp))
+
+                    // Guidance Banner
+                    Surface(
+                        color = Color(0xFFEFF6FF),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(22.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                "Guidelines: Add at least 3 photos for better reach: Exterior, Bedroom, Living Area.",
+                                "Add photos for better response: Front exterior, Living hall, Bedrooms, and Kitchen.",
                                 fontSize = 12.sp,
                                 color = Color(0xFF1E40AF)
                             )
@@ -379,59 +518,141 @@ fun PostPropertyScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Photo list
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        uploadedPhotos.forEachIndexed { index, photoName ->
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                modifier = Modifier.fillMaxWidth()
+                    // Buttons to open Gallery & Camera
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Gallery Button
+                        Button(
+                            onClick = {
+                                galleryPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("open_gallery_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                        ) {
+                            Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Open Gallery", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Camera Button
+                        Button(
+                            onClick = {
+                                cameraLauncher.launch(null)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("open_camera_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
+                        ) {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Take Camera", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    // Selected photos list / thumbnails
+                    if (uploadedPhotos.isEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFFF8FAFC),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(28.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(48.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("No photos selected yet", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF475569))
+                                Text("Tap 'Open Gallery' or 'Take Camera' above to upload photos.", fontSize = 12.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                    } else {
+                        Text("${uploadedPhotos.size} Photo(s) Attached", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            uploadedPhotos.forEachIndexed { index, photoItem ->
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Filled.PhotoCamera, contentDescription = null, tint = Color(0xFF2563EB))
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(photoName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                            if (index == 0) {
-                                                Text("Cover Photo (Main)", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            // Thumbnail
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(54.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color(0xFFE2E8F0)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (photoItem.uri != null) {
+                                                    AsyncImage(
+                                                        model = photoItem.uri,
+                                                        contentDescription = photoItem.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else if (photoItem.bitmap != null) {
+                                                    Image(
+                                                        bitmap = photoItem.bitmap.asImageBitmap(),
+                                                        contentDescription = photoItem.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Icon(Icons.Filled.Image, contentDescription = null, tint = Color(0xFF64748B))
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(12.dp))
+
+                                            Column {
+                                                Text(photoItem.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                if (index == 0) {
+                                                    Text("Cover Photo (Featured)", fontSize = 11.sp, color = Color(0xFF059669), fontWeight = FontWeight.Bold)
+                                                } else {
+                                                    Text("Gallery Image #${index + 1}", fontSize = 11.sp, color = Color(0xFF64748B))
+                                                }
                                             }
                                         }
-                                    }
 
-                                    Row {
-                                        IconButton(onClick = {
-                                            Toast.makeText(context, "Photo rotated 90°", Toast.LENGTH_SHORT).show()
-                                        }) {
-                                            Icon(Icons.Filled.RotateRight, contentDescription = "Rotate", modifier = Modifier.size(20.dp))
-                                        }
                                         IconButton(onClick = {
                                             uploadedPhotos = uploadedPhotos.filterIndexed { i, _ -> i != index }
                                         }) {
-                                            Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
+                                            Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 }
                             }
-                        }
-
-                        // Add photo button
-                        OutlinedButton(
-                            onClick = {
-                                uploadedPhotos = uploadedPhotos + "New Interior Photo ${uploadedPhotos.size + 1}"
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("+ Add More Photos")
                         }
                     }
                 }
@@ -439,146 +660,104 @@ fun PostPropertyScreen(
                 // ==================== STEP 5: DESCRIPTION & HIGHLIGHTS ====================
                 5 -> {
                     Text("Step 5: Description & Highlights", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Highlight special features to attract buyers.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Highlight special features to attract buyers/tenants.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
 
                     Text("Listing Title / Heading", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
+                        placeholder = { Text("e.g., Spacious $bhkType $propertyType near Metro") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("Detailed Description (min 50 chars)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Detailed Description", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
+                        placeholder = { Text("Mention details like road width, water supply, modular kitchen, ventilation, nearby landmarks...") },
                         minLines = 4,
-                        maxLines = 6,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     )
-                    Text("${description.length} / 1000 characters", fontSize = 11.sp, color = Color(0xFF94A3B8), modifier = Modifier.align(Alignment.End))
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("Quick Feature Tags / Chips", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    listOf(
-                        "Gated Society", "Park Facing", "24/7 Water", "Corner Property",
-                        "Near Metro", "Road Width 40ft", "Vastu Compliant", "Lift Facility"
-                    ).chunked(2).forEach { tagRow ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            tagRow.forEach { tag ->
-                                FilterChip(
-                                    selected = selectedFeatureTags.contains(tag),
-                                    onClick = {
-                                        selectedFeatureTags = if (selectedFeatureTags.contains(tag)) {
-                                            selectedFeatureTags - tag
-                                        } else {
-                                            selectedFeatureTags + tag
-                                        }
-                                    },
-                                    label = { Text(tag, fontSize = 12.sp) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                    Text("Key Amenities / Highlights", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val allFeatures = listOf("Gated Society", "Park Facing", "24/7 Water", "Near Metro", "Lift", "Parking", "Power Backup", "Corner Property")
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        allFeatures.forEach { tag ->
+                            val isSel = selectedFeatureTags.contains(tag)
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    selectedFeatureTags = if (isSel) selectedFeatureTags - tag else selectedFeatureTags + tag
+                                },
+                                label = { Text(tag, fontSize = 12.sp) }
+                            )
                         }
                     }
                 }
 
-                // ==================== STEP 6: PRICING & COMMERCIALS ====================
+                // ==================== STEP 6: PRICING DETAILS ====================
                 6 -> {
-                    Text("Step 6: Pricing & Commercials", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Set competitive pricing for faster closing.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Step 6: Pricing Details", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Set fair market pricing for fast inquiries.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
 
                     if (listingType == ListingType.RENT) {
-                        Text("Monthly Rent (₹ / month)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Monthly Rent (₹)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = rentAmount,
-                            onValueChange = { rentAmount = it },
-                            prefix = { Text("₹ ", fontWeight = FontWeight.Bold) },
+                            onValueChange = { if (it.all { c -> c.isDigit() }) rentAmount = it },
+                            placeholder = { Text("e.g., 22000") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Text("Security Deposit (₹)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = securityDeposit,
-                            onValueChange = { securityDeposit = it },
-                            prefix = { Text("₹ ", fontWeight = FontWeight.Bold) },
+                            onValueChange = { if (it.all { c -> c.isDigit() }) securityDeposit = it },
+                            placeholder = { Text("e.g., 44000") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text("Maintenance Charges", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("Included", "Separate (₹1500/mo)").forEach { m ->
-                                FilterChip(
-                                    selected = maintenanceType == m,
-                                    onClick = { maintenanceType = m },
-                                    label = { Text(m, fontSize = 12.sp) }
-                                )
-                            }
-                        }
                     } else {
-                        // Sale or Plot
-                        Text("Expected Selling Price (₹ Lakhs)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Total Price in Lakhs (₹)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = salePriceLakhs,
-                            onValueChange = { salePriceLakhs = it },
-                            prefix = { Text("₹ ", fontWeight = FontWeight.Bold) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            onValueChange = { if (it.all { c -> c.isDigit() || c == '.' }) salePriceLakhs = it },
+                            placeholder = { Text("e.g., 65 (for 65 Lakhs)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
+                    }
 
-                        val priceLakhsNum = salePriceLakhs.toDoubleOrNull() ?: 0.0
-                        Surface(
-                            color = Color(0xFFDCFCE7),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.padding(top = 8.dp)
-                        ) {
-                            Text(
-                                text = if (priceLakhsNum >= 100) "Total: ₹${String.format("%.2f", priceLakhsNum / 100)} Crore" else "Total: ₹${priceLakhsNum.toInt()} Lakh",
-                                color = Color(0xFF15803D),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = isNegotiable, onCheckedChange = { isNegotiable = it })
-                            Text("Price Negotiable", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isNegotiable, onCheckedChange = { isNegotiable = it })
+                        Text("Price Negotiable", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
 
-                // ==================== STEP 7: REVIEW & FINAL ACTION ====================
+                // ==================== STEP 7: REVIEW & SUBMIT ====================
                 7 -> {
                     Text("Step 7: Review & Submit Listing", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Check all details before publishing your listing live.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+                    Text("Check all details before publishing live.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -605,21 +784,32 @@ fun PostPropertyScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("$streetAddress, $localitySearch, $cityName", fontSize = 12.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp))
+                            val finalTitle = title.ifBlank { "$bhkType $propertyType in ${localitySearch.ifBlank { "NCR" }}" }
+                            Text(finalTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(
+                                text = "${streetAddress.ifBlank { "" }} ${localitySearch.ifBlank { "Locality" }}, ${cityName.ifBlank { "City" }}",
+                                fontSize = 12.sp,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            val finalPrice = if (listingType == ListingType.RENT) "₹$rentAmount / mo" else "₹$salePriceLakhs Lakh"
+                            val finalPrice = if (listingType == ListingType.RENT) "₹${rentAmount.ifBlank { "20000" }} / mo" else "₹${salePriceLakhs.ifBlank { "50" }} Lakh"
                             Text(finalPrice, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0F766E))
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), maxLines = 3)
+                            Text(
+                                text = description.ifBlank { "Well-maintained $bhkType $propertyType in prime locality with all amenities." },
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                                maxLines = 3
+                            )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            Text("Key Highlights: ${selectedFeatureTags.joinToString(" • ")}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF2563EB))
+                            Text("Photos attached: ${uploadedPhotos.size}", fontSize = 11.sp, color = Color(0xFF2563EB), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -637,26 +827,38 @@ fun PostPropertyScreen(
                 onClick = {
                     validationError = null
                     if (currentStep < 7) {
-                        // Validation checks
-                        if (currentStep == 5 && description.length < 30) {
-                            validationError = "Please write at least 30 characters in property description."
+                        if (currentStep == 3 && localitySearch.isBlank() && cityName.isBlank()) {
+                            validationError = "Please enter locality or tap 'Auto-Detect My Current Location'."
                         } else {
                             currentStep++
                         }
                     } else {
                         // Final Submit
-                        val priceNum = if (listingType == ListingType.RENT) rentAmount.toDoubleOrNull() ?: 24000.0 else (salePriceLakhs.toDoubleOrNull() ?: 75.0) * 100000.0
-                        val priceDisplay = if (listingType == ListingType.RENT) "₹$rentAmount / mo" else "₹$salePriceLakhs Lakh"
+                        val priceNum = if (listingType == ListingType.RENT) {
+                            rentAmount.toDoubleOrNull() ?: 24000.0
+                        } else {
+                            (salePriceLakhs.toDoubleOrNull() ?: 75.0) * 100000.0
+                        }
+                        val priceDisplay = if (listingType == ListingType.RENT) {
+                            "₹${rentAmount.ifBlank { "24000" }} / mo"
+                        } else {
+                            "₹${salePriceLakhs.ifBlank { "75" }} Lakh"
+                        }
+
+                        val resolvedLocality = localitySearch.ifBlank { "Local Area" }
+                        val resolvedCity = cityName.ifBlank { "Delhi NCR" }
+                        val resolvedTitle = title.ifBlank { "$bhkType $propertyType in $resolvedLocality" }
+                        val resolvedDesc = description.ifBlank { "Modern and spacious $bhkType property in $resolvedLocality, $resolvedCity." }
 
                         val newProp = Property(
                             id = "prop_${System.currentTimeMillis()}",
-                            title = title,
+                            title = resolvedTitle,
                             listingType = listingType,
                             propertyType = if (listingType == ListingType.PLOT) "Plot" else propertyType,
                             bhk = if (listingType == ListingType.PLOT) "N/A" else bhkType,
-                            locality = localitySearch,
-                            city = cityName,
-                            distanceInfo = "Near Sector 62 Metro",
+                            locality = resolvedLocality,
+                            city = resolvedCity,
+                            distanceInfo = "Near Local Hub",
                             price = priceNum,
                             priceDisplay = priceDisplay,
                             areaGaj = plotSize.toIntOrNull() ?: 150,
@@ -668,12 +870,15 @@ fun PostPropertyScreen(
                             ownerName = userProfile.fullName,
                             ownerPhone = userProfile.mobileNumber,
                             amenities = selectedFeatureTags.toList(),
-                            description = description,
+                            imageUrl = uploadedPhotos.firstOrNull()?.uri?.toString() ?: "",
+                            description = resolvedDesc,
                             viewsCount = 1,
                             inquiriesCount = 0,
                             postedDate = "Just now",
                             validityDaysRemaining = 30,
-                            status = PropertyStatus.ACTIVE
+                            status = PropertyStatus.ACTIVE,
+                            lat = detectedLatitude,
+                            lng = detectedLongitude
                         )
 
                         viewModel.repository.postProperty(newProp)

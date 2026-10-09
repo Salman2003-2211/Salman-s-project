@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
+import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,11 +35,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.model.ListingType
 import com.example.model.Property
 import com.example.ui.ScreenOverlay
 import com.example.ui.SpareViewModel
 import com.example.ui.components.IntentHelper
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +70,101 @@ fun SearchScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var selectedMapPinProperty by remember { mutableStateOf<Property?>(null) }
     var isVoiceListening by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    var isDetectingLocation by remember { mutableStateOf(false) }
+
+    fun fetchCurrentGpsLocation() {
+        val fineGranted = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (fineGranted || coarseGranted) {
+            isDetectingLocation = true
+            Toast.makeText(context, "Detecting GPS location...", Toast.LENGTH_SHORT).show()
+            try {
+                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                    .addOnSuccessListener { loc ->
+                        if (loc != null) {
+                            coroutineScope.launch {
+                                val detectedQuery = withContext(Dispatchers.IO) {
+                                    try {
+                                        val geocoder = Geocoder(context, Locale.getDefault())
+                                        val list = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                                        if (!list.isNullOrEmpty()) {
+                                            val addr = list[0]
+                                            val locName = addr.subLocality ?: addr.locality ?: addr.adminArea
+                                            val cityName = addr.locality ?: addr.subAdminArea ?: addr.adminArea
+                                            if (!locName.isNullOrBlank() && !cityName.isNullOrBlank() && locName != cityName) {
+                                                "$locName, $cityName"
+                                            } else {
+                                                locName ?: cityName ?: "Current Location"
+                                            }
+                                        } else "Current Location"
+                                    } catch (e: Exception) {
+                                        "Current Location"
+                                    }
+                                }
+                                viewModel.setSearchQuery(detectedQuery)
+                                isDetectingLocation = false
+                                Toast.makeText(context, "Location set: $detectedQuery", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc ->
+                                isDetectingLocation = false
+                                if (lastLoc != null) {
+                                    coroutineScope.launch {
+                                        val detectedQuery = withContext(Dispatchers.IO) {
+                                            try {
+                                                val geocoder = Geocoder(context, Locale.getDefault())
+                                                val list = geocoder.getFromLocation(lastLoc.latitude, lastLoc.longitude, 1)
+                                                if (!list.isNullOrEmpty()) {
+                                                    val addr = list[0]
+                                                    addr.subLocality ?: addr.locality ?: "Current Location"
+                                                } else "Current Location"
+                                            } catch (e: Exception) {
+                                                "Current Location"
+                                            }
+                                        }
+                                        viewModel.setSearchQuery(detectedQuery)
+                                        Toast.makeText(context, "Location set: $detectedQuery", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "Unable to get GPS fix. Please ensure location is enabled.", Toast.LENGTH_SHORT).show()
+                                }
+                            }.addOnFailureListener {
+                                isDetectingLocation = false
+                                Toast.makeText(context, "GPS detection failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        isDetectingLocation = false
+                        Toast.makeText(context, "GPS location unavailable", Toast.LENGTH_SHORT).show()
+                    }
+            } catch (e: SecurityException) {
+                isDetectingLocation = false
+                Toast.makeText(context, "Location permission required", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            fetchCurrentGpsLocation()
+        } else {
+            Toast.makeText(context, "Location permission denied. You can type location manually.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Popular Suggestions
     val popularSuggestions = listOf("Sector 62, Noida", "Rohini Sector 24", "Dwarka Expressway", "Indirapuram", "Greater Noida West")
@@ -174,12 +280,37 @@ fun SearchScreen(
                                 // Near Me GPS Button
                                 IconButton(
                                     onClick = {
-                                        viewModel.setSearchQuery("Sector 62, Noida")
-                                        Toast.makeText(context, "Location set to current GPS: Sector 62, Noida", Toast.LENGTH_SHORT).show()
+                                        val fineGranted = ContextCompat.checkSelfPermission(
+                                            context,
+                                            android.Manifest.permission.ACCESS_FINE_LOCATION
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        val coarseGranted = ContextCompat.checkSelfPermission(
+                                            context,
+                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                        ) == PackageManager.PERMISSION_GRANTED
+
+                                        if (fineGranted || coarseGranted) {
+                                            fetchCurrentGpsLocation()
+                                        } else {
+                                            locationPermissionLauncher.launch(
+                                                arrayOf(
+                                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                                )
+                                            )
+                                        }
                                     },
                                     modifier = Modifier.testTag("search_gps_button")
                                 ) {
-                                    Icon(Icons.Filled.MyLocation, contentDescription = "Near Me", tint = Color(0xFF059669), modifier = Modifier.size(20.dp))
+                                    if (isDetectingLocation) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFF059669)
+                                        )
+                                    } else {
+                                        Icon(Icons.Filled.MyLocation, contentDescription = "Near Me", tint = Color(0xFF059669), modifier = Modifier.size(20.dp))
+                                    }
                                 }
 
                                 // Voice Search Mic

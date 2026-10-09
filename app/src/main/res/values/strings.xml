@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">S.P.A.RE</string>
+    <string name="default_web_client_id">spare-web-client-id.apps.googleusercontent.com</string>
 </resources>
