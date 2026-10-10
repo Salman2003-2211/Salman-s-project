@@ -15,19 +15,30 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
 class FirestoreRepository(
-    val db: FirebaseFirestore,
+    val db: FirebaseFirestore = try {
+        FirebaseFirestore.getInstance()
+    } catch (e: Exception) {
+        FirebaseFirestore.getInstance()
+    },
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
     // Secondary constructor resolving custom database ID from string resources
     constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
+        try {
+            val dbId = context.applicationContext.getString(R.string.firestore_database_id)
+            if (dbId.isNotBlank() && dbId != "(default)") {
+                FirebaseFirestore.getInstance(dbId)
+            } else {
+                FirebaseFirestore.getInstance()
+            }
+        } catch (e: Exception) {
+            FirebaseFirestore.getInstance()
+        }
     )
 
     private fun requireUserId(): String {
         return auth.currentUser?.uid
-            ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
+            ?: "guest_user_${System.currentTimeMillis()}"
     }
 
     suspend fun saveUserProfile(
@@ -149,6 +160,47 @@ class FirestoreRepository(
                 "createdAt" to FieldValue.serverTimestamp()
             )
             val docRef = db.collection(path).add(data).await()
+            Result.success(docRef.id)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Saves user submitted lead with Mobile Number, Property Query, and Loan Client Requirements
+     * into Firestore collection "property_leads".
+     */
+    suspend fun savePropertyLead(
+        mobileNumber: String,
+        propertyQuery: String,
+        loanClientRequirements: String,
+        clientName: String = ""
+    ): Result<String> {
+        val uid = auth.currentUser?.uid ?: requireUserId()
+        val path = "property_leads"
+        return try {
+            val data = hashMapOf<String, Any>(
+                "mobileNumber" to mobileNumber,
+                "propertyQuery" to propertyQuery,
+                "loanClientRequirements" to loanClientRequirements,
+                "clientName" to clientName,
+                "userId" to uid,
+                "status" to "PENDING",
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            val docRef = try {
+                db.collection(path).add(data).await()
+            } catch (e: Exception) {
+                // If custom database failed or not yet provisioned, fallback to default instance
+                val defaultDb = FirebaseFirestore.getInstance()
+                if (defaultDb != db) {
+                    defaultDb.collection(path).add(data).await()
+                } else {
+                    throw e
+                }
+            }
+            android.util.Log.i("FirestoreRepository", "Successfully saved property_lead: ${docRef.id}")
             Result.success(docRef.id)
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, path)

@@ -164,6 +164,22 @@ class SpareViewModel(
         _currentOverlay.value = ScreenOverlay.Login
     }
 
+    val firestoreRepository = com.example.data.FirestoreRepository()
+
+    suspend fun submitPropertyLead(
+        mobileNumber: String,
+        propertyQuery: String,
+        loanClientRequirements: String,
+        clientName: String = ""
+    ): Result<String> {
+        return firestoreRepository.savePropertyLead(
+            mobileNumber = mobileNumber,
+            propertyQuery = propertyQuery,
+            loanClientRequirements = loanClientRequirements,
+            clientName = clientName
+        )
+    }
+
     companion object {
         const val BUY_OR_SALE = "Buy / Sale"
     }

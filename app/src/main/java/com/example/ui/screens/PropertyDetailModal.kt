@@ -21,6 +21,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.example.model.Property
 import com.example.ui.SpareViewModel
 import com.example.ui.components.IntentHelper
@@ -33,8 +37,22 @@ fun PropertyDetailModal(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val properties by viewModel.properties.collectAsState()
+    val userProfile by viewModel.userProfile.collectAsState()
     val property = properties.find { it.id == propertyId }
+
+    var showInquiryDialog by remember { mutableStateOf(false) }
+    var inquiryMobile by remember(userProfile.mobileNumber) { mutableStateOf(userProfile.mobileNumber) }
+    var inquiryPropertyQuery by remember(property) {
+        mutableStateOf(if (property != null) "Inquiry for ${property.title} in ${property.locality} (${property.priceDisplay})" else "")
+    }
+    var inquiryLoanRequirements by remember(property) {
+        mutableStateOf(if (property != null) "Home Loan / Financial assistance required for ₹${property.priceDisplay}" else "Home Loan assistance required")
+    }
+    var isInquirySubmitting by remember { mutableStateOf(false) }
+    var inquiryError by remember { mutableStateOf<String?>(null) }
+    var inquirySuccessDocId by remember { mutableStateOf<String?>(null) }
 
     if (property == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -75,17 +93,34 @@ fun PropertyDetailModal(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Firestore Lead Submission Button
+                    Button(
+                        onClick = {
+                            inquiryError = null
+                            inquirySuccessDocId = null
+                            showInquiryDialog = true
+                        },
+                        modifier = Modifier.weight(1.3f).height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+                    ) {
+                        Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Enquire & Loan", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
                     FilledTonalButton(
                         onClick = { IntentHelper.dialPhone(context, property.ownerPhone) },
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(0.9f).height(48.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Call Owner", fontWeight = FontWeight.Bold)
+                        Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Call", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
 
                     Button(
@@ -96,13 +131,13 @@ fun PropertyDetailModal(
                                 "Hi ${property.ownerName}, I saw your property '${property.title}' on S.P.A.RE. Is it available for inspection?"
                             )
                         },
-                        modifier = Modifier.weight(1.2f).height(48.dp),
+                        modifier = Modifier.weight(1.1f).height(48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
                     ) {
-                        Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("WhatsApp", fontWeight = FontWeight.Bold, color = Color.White)
+                        Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("WhatsApp", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
@@ -253,6 +288,195 @@ fun PropertyDetailModal(
             }
 
             Spacer(modifier = Modifier.height(30.dp))
+        }
+
+        // Property & Loan Inquiry Modal Dialog (Firestore "property_leads")
+        if (showInquiryDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isInquirySubmitting) {
+                        showInquiryDialog = false
+                    }
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = Color(0xFF059669))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Property & Loan Inquiry", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (inquirySuccessDocId != null) {
+                            Surface(
+                                color = Color(0xFFECFDF5),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF059669))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Saved to Firestore!", fontWeight = FontWeight.Bold, color = Color(0xFF065F46))
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Lead successfully recorded in collection 'property_leads'.",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF047857)
+                                    )
+                                    Text(
+                                        "Document ID: $inquirySuccessDocId",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF065F46)
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                "Enter details to save your inquiry directly to Firebase Firestore collection 'property_leads':",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // 1. Mobile Number
+                            Text("1. Mobile Number *", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = inquiryMobile,
+                                onValueChange = {
+                                    inquiryMobile = it
+                                    inquiryError = null
+                                },
+                                placeholder = { Text("10-digit mobile number") },
+                                prefix = { Text("+91 ", fontWeight = FontWeight.Bold) },
+                                leadingIcon = { Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF10B981)) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            // 2. Property Query
+                            Text("2. Property Query *", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = inquiryPropertyQuery,
+                                onValueChange = {
+                                    inquiryPropertyQuery = it
+                                    inquiryError = null
+                                },
+                                placeholder = { Text("Property title, requirements, or inspection query") },
+                                leadingIcon = { Icon(Icons.Filled.Home, contentDescription = null, tint = Color(0xFF0D9488)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            // 3. Loan Client Requirements
+                            Text("3. Loan Client Requirements *", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = inquiryLoanRequirements,
+                                onValueChange = {
+                                    inquiryLoanRequirements = it
+                                    inquiryError = null
+                                },
+                                placeholder = { Text("e.g. Home Loan ₹35 Lakh / LAP / Self finance") },
+                                leadingIcon = { Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = Color(0xFF2563EB)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            if (inquiryError != null) {
+                                Surface(
+                                    color = Color(0xFFFEF2F2),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Filled.Error, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(inquiryError!!, color = Color(0xFFB91C1C), fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (inquirySuccessDocId != null) {
+                        Button(
+                            onClick = { showInquiryDialog = false }
+                        ) {
+                            Text("Done")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                val cleanPhone = inquiryMobile.trim().filter { it.isDigit() }
+                                if (cleanPhone.length < 10) {
+                                    inquiryError = "Mobile Number must be at least 10 digits."
+                                    return@Button
+                                }
+                                if (inquiryPropertyQuery.trim().length < 3) {
+                                    inquiryError = "Property Query is required."
+                                    return@Button
+                                }
+                                if (inquiryLoanRequirements.trim().length < 3) {
+                                    inquiryError = "Loan Client Requirements is required."
+                                    return@Button
+                                }
+
+                                inquiryError = null
+                                isInquirySubmitting = true
+                                coroutineScope.launch {
+                                    val result = viewModel.submitPropertyLead(
+                                        mobileNumber = cleanPhone,
+                                        propertyQuery = inquiryPropertyQuery.trim(),
+                                        loanClientRequirements = inquiryLoanRequirements.trim(),
+                                        clientName = userProfile.fullName.ifBlank { "Client" }
+                                    )
+                                    isInquirySubmitting = false
+                                    if (result.isSuccess) {
+                                        inquirySuccessDocId = result.getOrNull()
+                                        Toast.makeText(context, "Lead saved to Firestore 'property_leads'!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        inquiryError = result.exceptionOrNull()?.localizedMessage ?: "Failed to save to Firestore. Check connection."
+                                    }
+                                }
+                            },
+                            enabled = !isInquirySubmitting,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+                        ) {
+                            if (isInquirySubmitting) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Saving...")
+                            } else {
+                                Text("Save to Firestore")
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    if (inquirySuccessDocId == null) {
+                        TextButton(
+                            onClick = { showInquiryDialog = false },
+                            enabled = !isInquirySubmitting
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+            )
         }
     }
 }

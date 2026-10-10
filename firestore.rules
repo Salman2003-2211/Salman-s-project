@@ -67,6 +67,16 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    function isValidPropertyLead(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.mobileNumber is string && data.mobileNumber.size() >= 8 && data.mobileNumber.size() <= 20 &&
+             data.propertyQuery is string && data.propertyQuery.size() >= 2 && data.propertyQuery.size() <= 500 &&
+             data.loanClientRequirements is string && data.loanClientRequirements.size() >= 2 && data.loanClientRequirements.size() <= 500 &&
+             (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 100)) &&
+             (!('status' in data) || data.status in ['PENDING', 'CONTACTED', 'IN_PROGRESS', 'CLOSED']) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
     // 1. User Profiles
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -99,6 +109,15 @@ service cloud.firestore {
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && isValidMeeting(incoming());
       allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidMeeting(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 5. Property Leads (Saved upon Form Submission)
+    match /property_leads/{leadId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com');
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com');
+      allow create: if isSignedIn() && isValidPropertyLead(incoming());
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'sksk18039@gmail.com') && isValidPropertyLead(incoming());
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
   }

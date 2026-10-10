@@ -79,6 +79,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "partnerId", "scheduledDate", "timeSlot", "createdAt"]
+    },
+    "PropertyLead": {
+      "title": "PropertyLead",
+      "description": "Property inquiry and loan requirement lead",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Auth UID" },
+        "mobileNumber": { "type": "string", "description": "Client mobile number" },
+        "propertyQuery": { "type": "string", "description": "Property query or interest" },
+        "loanClientRequirements": { "type": "string", "description": "Loan client requirements" },
+        "clientName": { "type": "string", "description": "Client full name" },
+        "status": { "type": "string", "enum": ["PENDING", "CONTACTED", "IN_PROGRESS", "CLOSED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "mobileNumber", "propertyQuery", "loanClientRequirements", "createdAt"]
     }
   },
   "firestore": {
@@ -97,6 +112,10 @@
     "/booked_meetings/{meetingId}": {
       "schema": "BookedMeeting",
       "description": "Scheduled appointments with partners"
+    },
+    "/property_leads/{leadId}": {
+      "schema": "PropertyLead",
+      "description": "Property query and loan client requirements leads"
     }
   }
 }

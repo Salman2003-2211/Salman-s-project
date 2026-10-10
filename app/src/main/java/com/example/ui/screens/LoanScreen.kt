@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
+import kotlinx.coroutines.launch
 import com.example.model.LeadStatus
 import com.example.model.LoanLead
 import com.example.model.LoanType
@@ -45,6 +47,7 @@ fun LoanScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val userProfile by viewModel.userProfile.collectAsState()
     val loanLeads by viewModel.loanLeads.collectAsState()
 
@@ -56,7 +59,18 @@ fun LoanScreen(
     var propertyStatus by remember { mutableStateOf("Shortlisted") }
     var city by remember { mutableStateOf("") }
     var lastSubmittedLead by remember { mutableStateOf<LoanLead?>(null) }
+    var savedFirestoreDocId by remember { mutableStateOf<String?>(null) }
     var showOperatorDashboard by remember { mutableStateOf(false) }
+
+    // Required 3 fields for Firestore "property_leads" collection
+    var mobileNumberInput by remember(userProfile.mobileNumber) { mutableStateOf(userProfile.mobileNumber) }
+    var propertyQueryInput by remember { mutableStateOf("Looking for 2BHK / 3BHK property in Noida NCR") }
+    var loanRequirementsInput by remember(selectedLoanType, loanAmountLakhs, employmentType) {
+        mutableStateOf("${selectedLoanType.title} • ₹${loanAmountLakhs.roundToInt()} Lakh ($employmentType)")
+    }
+
+    var isSubmitting by remember { mutableStateOf(false) }
+    var submissionError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -138,9 +152,15 @@ fun LoanScreen(
                     2 -> Screen2RequirementForm(
                         loanType = selectedLoanType,
                         amountLakhs = loanAmountLakhs,
-                        onAmountChange = { loanAmountLakhs = it },
+                        onAmountChange = {
+                            loanAmountLakhs = it
+                            loanRequirementsInput = "${selectedLoanType.title} • ₹${it.roundToInt()} Lakh ($employmentType)"
+                        },
                         employmentType = employmentType,
-                        onEmploymentChange = { employmentType = it },
+                        onEmploymentChange = {
+                            employmentType = it
+                            loanRequirementsInput = "${selectedLoanType.title} • ₹${loanAmountLakhs.roundToInt()} Lakh ($it)"
+                        },
                         monthlyIncome = monthlyIncome,
                         onIncomeChange = { monthlyIncome = it },
                         propertyStatus = propertyStatus,
@@ -148,24 +168,79 @@ fun LoanScreen(
                         city = city,
                         onCityChange = { city = it },
                         userName = userProfile.fullName,
-                        userPhone = userProfile.mobileNumber,
+                        mobileNumber = mobileNumberInput,
+                        onMobileNumberChange = {
+                            mobileNumberInput = it
+                            submissionError = null
+                        },
+                        propertyQuery = propertyQueryInput,
+                        onPropertyQueryChange = {
+                            propertyQueryInput = it
+                            submissionError = null
+                        },
+                        loanRequirements = loanRequirementsInput,
+                        onLoanRequirementsChange = {
+                            loanRequirementsInput = it
+                            submissionError = null
+                        },
+                        isSubmitting = isSubmitting,
+                        errorMessage = submissionError,
                         onSubmit = {
-                            val lead = viewModel.repository.submitLoanApplication(
-                                loanType = selectedLoanType,
-                                amountLakhs = loanAmountLakhs.toDouble(),
-                                employmentType = employmentType,
-                                monthlyIncome = monthlyIncome,
-                                propertyStatus = propertyStatus,
-                                city = city,
-                                clientName = userProfile.fullName,
-                                phone = userProfile.mobileNumber
-                            )
-                            lastSubmittedLead = lead
-                            currentStep = 3
+                            // 1. Validate required fields
+                            val cleanPhone = mobileNumberInput.trim().filter { it.isDigit() }
+                            if (cleanPhone.length < 10) {
+                                submissionError = "Mobile Number is required (must be at least 10 digits)."
+                                return@Screen2RequirementForm
+                            }
+                            if (propertyQueryInput.trim().length < 3) {
+                                submissionError = "Property Query is required (minimum 3 characters)."
+                                return@Screen2RequirementForm
+                            }
+                            if (loanRequirementsInput.trim().length < 3) {
+                                submissionError = "Loan Client Requirements is required (minimum 3 characters)."
+                                return@Screen2RequirementForm
+                            }
+
+                            // 2. Clear previous errors and indicate loading
+                            submissionError = null
+                            isSubmitting = true
+
+                            // 3. Save to Firestore collection "property_leads"
+                            coroutineScope.launch {
+                                val result = viewModel.submitPropertyLead(
+                                    mobileNumber = cleanPhone,
+                                    propertyQuery = propertyQueryInput.trim(),
+                                    loanClientRequirements = loanRequirementsInput.trim(),
+                                    clientName = userProfile.fullName.ifBlank { "Client" }
+                                )
+                                isSubmitting = false
+
+                                if (result.isSuccess) {
+                                    savedFirestoreDocId = result.getOrNull()
+                                    val lead = viewModel.repository.submitLoanApplication(
+                                        loanType = selectedLoanType,
+                                        amountLakhs = loanAmountLakhs.toDouble(),
+                                        employmentType = employmentType,
+                                        monthlyIncome = monthlyIncome,
+                                        propertyStatus = propertyStatus,
+                                        city = city.ifBlank { "NCR" },
+                                        clientName = userProfile.fullName.ifBlank { "Client" },
+                                        phone = cleanPhone
+                                    )
+                                    lastSubmittedLead = lead
+                                    Toast.makeText(context, "Lead saved to Firestore collection 'property_leads'!", Toast.LENGTH_SHORT).show()
+                                    // Advance to Success confirmation screen ONLY after data is saved!
+                                    currentStep = 3
+                                } else {
+                                    val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Network or permission error"
+                                    submissionError = "Failed to save lead: $errorMsg. Please check internet connection."
+                                }
+                            }
                         }
                     )
                     3 -> Screen3SuccessConfirmation(
                         lead = lastSubmittedLead,
+                        savedDocId = savedFirestoreDocId,
                         onContinue = {
                             currentStep = 1
                             viewModel.setActiveTab(AppTab.HOME)
@@ -383,7 +458,14 @@ fun Screen2RequirementForm(
     city: String,
     onCityChange: (String) -> Unit,
     userName: String,
-    userPhone: String,
+    mobileNumber: String,
+    onMobileNumberChange: (String) -> Unit,
+    propertyQuery: String,
+    onPropertyQueryChange: (String) -> Unit,
+    loanRequirements: String,
+    onLoanRequirementsChange: (String) -> Unit,
+    isSubmitting: Boolean,
+    errorMessage: String?,
     onSubmit: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -552,55 +634,99 @@ fun Screen2RequirementForm(
             shape = RoundedCornerShape(12.dp)
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        // Property Status Chips
-        Text("Property Status", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        // -------------------------------------------------------------
+        // MANDATORY FIRESTORE "property_leads" FIELDS
+        // -------------------------------------------------------------
+
+        // 1. Loan Client Requirements
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("1. Loan Client Requirements *", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+        Text("Auto-generated or edit specific requirements", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+        OutlinedTextField(
+            value = loanRequirements,
+            onValueChange = onLoanRequirementsChange,
+            placeholder = { Text("e.g., Home Loan ₹35 Lakh, Salaried") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_loan_requirements"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // 2. Property Query
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.HomeWork, contentDescription = null, tint = Color(0xFF0D9488), modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("2. Property Query *", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+        Text("Property details, location, or inquiry questions", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+        OutlinedTextField(
+            value = propertyQuery,
+            onValueChange = onPropertyQueryChange,
+            placeholder = { Text("e.g., 2BHK flat in Sector 62 Noida / Residential plot") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_property_query"),
+            shape = RoundedCornerShape(12.dp)
+        )
+
         Spacer(modifier = Modifier.height(8.dp))
+
+        // Property status quick tags
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("Shortlisted", "Already Owned", "Still Searching").forEach { status ->
+            listOf("2BHK Flat", "3BHK Villa", "Residential Plot", "Commercial Shop").forEach { chip ->
                 FilterChip(
-                    selected = propertyStatus == status,
-                    onClick = { onPropertyStatusChange(status) },
-                    label = { Text(status, fontSize = 12.sp) }
+                    selected = propertyQuery.contains(chip),
+                    onClick = {
+                        if (!propertyQuery.contains(chip)) {
+                            onPropertyQueryChange(if (propertyQuery.isBlank()) chip else "$propertyQuery • $chip")
+                        }
+                    },
+                    label = { Text(chip, fontSize = 11.sp) }
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        // Contact Details (Pre-filled from Profile)
-        Text("Contact & Location Details", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Client Name:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(userName, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Mobile Number:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("+91 $userPhone (Verified)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
-                }
-            }
+        // 3. Mobile Number
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Phone, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("3. Mobile Number *", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
+        Text("Required for Firestore lead registration & advisor callback", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+        OutlinedTextField(
+            value = mobileNumber,
+            onValueChange = onMobileNumberChange,
+            placeholder = { Text("10-digit mobile number") },
+            prefix = { Text("+91 ", fontWeight = FontWeight.Bold) },
+            leadingIcon = {
+                Icon(Icons.Filled.Smartphone, contentDescription = null, tint = Color(0xFF10B981))
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_mobile_number"),
+            shape = RoundedCornerShape(12.dp)
+        )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
+        // City / Locality
         Text("City / Locality", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(6.dp))
         OutlinedTextField(
@@ -612,10 +738,36 @@ fun Screen2RequirementForm(
             shape = RoundedCornerShape(12.dp)
         )
 
+        // Error message banner if validation or Firestore saving fails
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Surface(
+                color = Color(0xFFFEF2F2),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Error, contentDescription = "Error", tint = Color(0xFFDC2626), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFB91C1C),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(26.dp))
 
         Button(
             onClick = onSubmit,
+            enabled = !isSubmitting,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
@@ -623,9 +775,19 @@ fun Screen2RequirementForm(
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
         ) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Submit Application / Apply Now", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Saving to Firestore...", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            } else {
+                Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Submit & Save Lead to Firestore", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -633,6 +795,7 @@ fun Screen2RequirementForm(
 @Composable
 fun Screen3SuccessConfirmation(
     lead: LoanLead?,
+    savedDocId: String? = null,
     onContinue: () -> Unit
 ) {
     // Pulsating animation for the success checkmark
@@ -674,7 +837,7 @@ fun Screen3SuccessConfirmation(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Thank you for your interest!",
+            text = "Lead Saved to Firestore!",
             fontSize = 22.sp,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.onSurface
@@ -683,33 +846,61 @@ fun Screen3SuccessConfirmation(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Hamare loan advisor jald hi aapse contact karenge aur best interest rates provide karenge.",
-            fontSize = 14.sp,
+            text = "Your Mobile Number, Property Query, and Loan Client Requirements have been saved successfully to collection 'property_leads' on Firebase (Project: spare-3a34a).",
+            fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            lineHeight = 20.sp,
+            lineHeight = 19.sp,
             modifier = Modifier.padding(horizontal = 16.dp)
         )
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Lead Reference ID
-        Surface(
-            color = Color(0xFFF1F5F9),
-            shape = RoundedCornerShape(12.dp)
+        // Lead Reference ID & Firestore Document ID
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = Color(0xFFF1F5F9),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Filled.Tag, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Lead Reference ID: ${lead?.referenceId ?: "LN-84920"}",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Tag, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Lead Reference ID: ${lead?.referenceId ?: "LN-84920"}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B)
+                    )
+                }
+            }
+
+            if (!savedDocId.isNullOrBlank()) {
+                Surface(
+                    color = Color(0xFFECFDF5),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Storage, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Firestore Doc ID: $savedDocId",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF065F46)
+                        )
+                    }
+                }
             }
         }
 
