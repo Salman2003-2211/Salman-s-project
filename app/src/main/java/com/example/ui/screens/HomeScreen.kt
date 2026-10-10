@@ -95,22 +95,23 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
+                            val clientDisplayName = if (userProfile.fullName.isNotBlank()) userProfile.fullName else "Client"
                             Text(
-                                text = AppStrings.welcomeHeader(lang),
-                                fontSize = 20.sp,
+                                text = "Hello, $clientDisplayName",
+                                fontSize = 19.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    Icons.Outlined.LocationOn,
-                                    contentDescription = "Location",
-                                    tint = Color(0xFF2563EB),
+                                    Icons.Outlined.VerifiedUser,
+                                    contentDescription = "Verified Client",
+                                    tint = Color(0xFF10B981),
                                     modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Delhi NCR • Noida • Gurugram",
+                                    text = if (userProfile.mobileNumber.isNotBlank()) "+91 ${userProfile.mobileNumber}" else "Verified Member",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                     fontWeight = FontWeight.Medium
@@ -129,8 +130,11 @@ fun HomeScreen(
                             .testTag("home_avatar_profile"),
                         contentAlignment = Alignment.Center
                     ) {
+                        val initialLetter = if (userProfile.fullName.isNotBlank()) {
+                            userProfile.fullName.trim().take(1).uppercase()
+                        } else "C"
                         Text(
-                            text = userProfile.fullName.take(1).uppercase(),
+                            text = initialLetter,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1E40AF),
                             fontSize = 16.sp
@@ -141,7 +145,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Hello, ${userProfile.fullName}! What would you like to explore today?",
+                    text = "What property or loan would you like to explore today?",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )

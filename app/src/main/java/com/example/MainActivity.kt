@@ -53,9 +53,10 @@ fun SpareMainApp(
         val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { firebaseAuth ->
             val user = firebaseAuth.currentUser
             if (user != null) {
-                val name = user.displayName ?: "Google User"
+                val name = user.displayName ?: user.phoneNumber ?: "User"
                 val email = user.email ?: ""
-                viewModel.login(name, "9818452198", email)
+                val phone = user.phoneNumber ?: ""
+                viewModel.login(name, phone, email)
             }
         }
         auth.addAuthStateListener(listener)

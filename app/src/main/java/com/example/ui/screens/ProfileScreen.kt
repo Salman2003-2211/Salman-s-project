@@ -93,8 +93,11 @@ fun ProfileScreen(
                                     .background(Color(0xFFDBEAFE)),
                                 contentAlignment = Alignment.Center
                             ) {
+                                val initialLetter = if (userProfile.fullName.isNotBlank()) {
+                                    userProfile.fullName.trim().take(1).uppercase()
+                                } else "C"
                                 Text(
-                                    text = userProfile.fullName.take(1).uppercase(),
+                                    text = initialLetter,
                                     fontSize = 28.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = Color(0xFF1E40AF)

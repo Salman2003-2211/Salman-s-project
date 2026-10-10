@@ -9,16 +9,16 @@ import kotlinx.coroutines.flow.update
 
 class SpareRepository {
 
-    private val _isLoggedIn = MutableStateFlow(true)
+    private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
     private val _userProfile = MutableStateFlow(
         UserProfile(
-            id = "usr_001",
-            fullName = "Rahul Rajpoot",
-            mobileNumber = "9818452198",
-            email = "rahul.rajpoot@example.com",
-            isVerified = true,
+            id = "usr_client",
+            fullName = "",
+            mobileNumber = "",
+            email = "",
+            isVerified = false,
             language = AppLanguage.ENGLISH
         )
     )
@@ -40,11 +40,12 @@ class SpareRepository {
     val loanLeads: StateFlow<List<LoanLead>> = _loanLeads.asStateFlow()
 
     fun login(name: String, phone: String, email: String) {
+        val cleanName = name.trim().ifBlank { "User" }
         _userProfile.update {
             it.copy(
-                fullName = name.ifBlank { "Rahul Rajpoot" },
-                mobileNumber = phone.ifBlank { "9818452198" },
-                email = email.ifBlank { "" },
+                fullName = cleanName,
+                mobileNumber = phone.trim(),
+                email = email.trim(),
                 isVerified = true
             )
         }
