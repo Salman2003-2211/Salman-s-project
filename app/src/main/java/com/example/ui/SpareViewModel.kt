@@ -1,7 +1,9 @@
 package com.example.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import com.example.data.SpareRepository
+import com.example.data.UserSessionManager
 import com.example.model.*
 import com.example.ui.theme.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,12 +27,14 @@ sealed class ScreenOverlay {
     object AboutUs : ScreenOverlay()
     data class LeadInbox(val propertyId: String? = null) : ScreenOverlay()
     data class PropertyDetail(val propertyId: String) : ScreenOverlay()
-    object OperatorCrm : ScreenOverlay()
 }
 
 class SpareViewModel(
-    val repository: SpareRepository = SpareRepository()
-) : ViewModel() {
+    application: Application
+) : AndroidViewModel(application) {
+
+    private val sessionManager = UserSessionManager(application.applicationContext)
+    val repository: SpareRepository = SpareRepository(sessionManager)
 
     val isLoggedIn = repository.isLoggedIn
     val userProfile = repository.userProfile
@@ -161,6 +165,9 @@ class SpareViewModel(
 
     fun logout() {
         repository.logout()
+        try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+        } catch (_: Exception) {}
         _currentOverlay.value = ScreenOverlay.Login
     }
 

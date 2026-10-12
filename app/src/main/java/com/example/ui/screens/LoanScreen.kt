@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -77,31 +78,12 @@ fun LoanScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (showOperatorDashboard) "Operator CRM Portal" else "Loan Assistance",
+                        "Loan Assistance",
                         fontWeight = FontWeight.Bold
                     )
                 },
-                actions = {
-                    // Operator / Admin CRM Toggle Button
-                    TextButton(
-                        onClick = { showOperatorDashboard = !showOperatorDashboard },
-                        modifier = Modifier.testTag("loan_operator_toggle")
-                    ) {
-                        Icon(
-                            imageVector = if (showOperatorDashboard) Icons.Filled.Person else Icons.Filled.AdminPanelSettings,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (showOperatorDashboard) "User View" else "Admin CRM",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                },
                 navigationIcon = {
-                    if (currentStep > 1 && !showOperatorDashboard) {
+                    if (currentStep > 1) {
                         IconButton(onClick = { currentStep-- }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
@@ -114,35 +96,13 @@ fun LoanScreen(
         },
         modifier = modifier
     ) { innerPadding ->
-        if (showOperatorDashboard) {
-            // Operator / Admin CRM Dashboard
-            OperatorCrmView(
-                loanLeads = loanLeads,
-                onUpdateStatus = { leadId, newStatus ->
-                    viewModel.repository.updateLoanLeadStatus(leadId, newStatus)
-                },
-                onCallLead = { phone ->
-                    IntentHelper.dialPhone(context, phone)
-                },
-                onWhatsAppLead = { phone, name ->
-                    IntentHelper.openWhatsApp(
-                        context,
-                        phone,
-                        "Hello $name, I am your S.P.A.RE loan advisor. Connecting regarding your loan application."
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            )
-        } else {
-            // User Loan Application 3-step Flow
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
+        // User Loan Application 3-step Flow
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
                 when (currentStep) {
                     1 -> Screen1LoanTypeSelection(
                         selectedType = selectedLoanType,
@@ -250,7 +210,6 @@ fun LoanScreen(
             }
         }
     }
-}
 
 @Composable
 fun Screen1LoanTypeSelection(
@@ -401,18 +360,24 @@ fun LoanTypeCard(
                         text = loanType.title,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
                     )
                     Surface(
                         color = if (isSelected) Color(0xFF2563EB) else Color(0xFFF1F5F9),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.wrapContentWidth()
                     ) {
                         Text(
                             text = badge,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isSelected) Color.White else Color(0xFF64748B),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
@@ -440,7 +405,7 @@ fun LoanFeatureBadge(text: String, icon: androidx.compose.ui.graphics.vector.Ima
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
         Spacer(modifier = Modifier.width(4.dp))
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
     }
 }
 

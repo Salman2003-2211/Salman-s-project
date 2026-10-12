@@ -29,8 +29,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.SpareViewModel
-import com.example.ui.components.GoogleSignInButton
 import com.example.ui.components.PhoneAuthHelper
+import com.example.ui.components.SmsGatewayHelper
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -299,39 +299,16 @@ fun LoginScreen(
                                 }
                                 errorMessage = null
                                 isSendingOtp = true
-                                val fullPhone = "+91$mobileNumber"
-                                // Generate a 6-digit OTP for this session
                                 val generatedCode = (100000 + (Math.random() * 900000).toInt()).toString()
                                 expectedOtpCode = generatedCode
 
-                                if (context is Activity) {
-                                    PhoneAuthHelper.sendVerificationCode(
-                                        activity = context,
-                                        phoneNumber = fullPhone,
-                                        onCodeSent = { vId ->
-                                            isSendingOtp = false
-                                            verificationId = vId
-                                            isOtpStep = true
-                                            canResend = false
-                                            infoMessage = "SMS OTP sent to $fullPhone"
-                                        },
-                                        onVerificationCompleted = { _ ->
-                                            isSendingOtp = false
-                                            val nameToUse = fullName.trim()
-                                            viewModel.login(nameToUse, mobileNumber, emailId)
-                                            onLoginSuccess()
-                                        },
-                                        onVerificationFailed = { _ ->
-                                            isSendingOtp = false
-                                            isOtpStep = true
-                                            canResend = false
-                                            infoMessage = "OTP sent to +91 $mobileNumber. Your verification code is: $generatedCode"
-                                        }
-                                    )
-                                } else {
+                                coroutineScope.launch {
+                                    delay(350)
+                                    SmsGatewayHelper.dispatchSmsOtp(context, mobileNumber, generatedCode)
                                     isSendingOtp = false
                                     isOtpStep = true
-                                    infoMessage = "OTP sent to +91 $mobileNumber. Your code is: $generatedCode"
+                                    canResend = false
+                                    infoMessage = "Verification OTP sent to +91 $mobileNumber via SMS. Please check your SMS inbox."
                                 }
                             },
                             enabled = !isSendingOtp,
@@ -358,28 +335,6 @@ fun LoginScreen(
                                 Icon(Icons.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFF334155))
-                            Text(" OR ", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFF334155))
-                        }
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        GoogleSignInButton(
-                            onAuthSuccess = { email, name ->
-                                val cleanName = if (fullName.isNotBlank()) fullName.trim() else name.ifBlank { "User" }
-                                viewModel.login(cleanName, mobileNumber.ifBlank { "" }, email)
-                                onLoginSuccess()
-                            },
-                            onAuthError = { errorMsg ->
-                                errorMessage = errorMsg
-                            }
-                        )
                     } else {
                         // OTP Verification Step
                         Row(
@@ -411,7 +366,7 @@ fun LoginScreen(
                             modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
                         )
 
-                        // Status info card (SMS delivered / code notification banner)
+                        // Status info card (SMS delivered notification banner)
                         if (infoMessage != null) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -432,55 +387,11 @@ fun LoginScreen(
                                         modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Text(
-                                            infoMessage!!,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = Color(0xFFE0F2FE)
-                                        )
-                                        if (expectedOtpCode != null) {
-                                            Text(
-                                                "Tap auto-fill below or enter code manually",
-                                                fontSize = 11.sp,
-                                                color = Color(0xFF7DD3FC)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Quick Fill for convenience
-                        if (expectedOtpCode != null) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF1E3A8A).copy(alpha = 0.5f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B82F6)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        enteredOtp = expectedOtpCode!!
-                                        errorMessage = null
-                                    }
-                                    .padding(bottom = 16.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
                                     Text(
-                                        "Code received: ${expectedOtpCode!!}",
+                                        infoMessage!!,
                                         fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF93C5FD)
-                                    )
-                                    Text(
-                                        "AUTO-FILL",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFFF59E0B)
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFFE0F2FE)
                                     )
                                 }
                             }
@@ -568,48 +479,30 @@ fun LoginScreen(
                         // Verify Button
                         Button(
                             onClick = {
-                                if (enteredOtp.length < 4) {
-                                    errorMessage = "Please enter the complete OTP code"
+                                if (enteredOtp.length < 6) {
+                                    errorMessage = "Please enter the complete 6-digit OTP code"
                                     return@Button
                                 }
                                 isVerifyingOtp = true
                                 errorMessage = null
 
                                 coroutineScope.launch {
-                                    val currentVId = verificationId
                                     val exp = expectedOtpCode
                                     val clientName = fullName.trim().ifBlank { "Client" }
 
-                                    // If user entered generated OTP or test code
-                                    if (enteredOtp == exp || enteredOtp == "123456" || enteredOtp == "2468") {
-                                        delay(300)
+                                    delay(300)
+                                    if (exp != null && enteredOtp == exp) {
                                         isVerifyingOtp = false
                                         viewModel.login(clientName, mobileNumber, emailId)
                                         Toast.makeText(context, "Welcome, $clientName! Account verified.", Toast.LENGTH_SHORT).show()
                                         onLoginSuccess()
-                                    } else if (currentVId != null) {
-                                        // Attempt Firebase Phone Auth credential verification
-                                        val result = PhoneAuthHelper.verifyCode(currentVId, enteredOtp)
-                                        if (result.isSuccess) {
-                                            isVerifyingOtp = false
-                                            viewModel.login(clientName, mobileNumber, emailId)
-                                            Toast.makeText(context, "Mobile number verified successfully!", Toast.LENGTH_SHORT).show()
-                                            onLoginSuccess()
-                                        } else {
-                                            isVerifyingOtp = false
-                                            errorMessage = "Incorrect OTP code. Please enter the valid code sent to your mobile or use $exp."
-                                        }
                                     } else {
-                                        // Verification success fallback
-                                        delay(300)
                                         isVerifyingOtp = false
-                                        viewModel.login(clientName, mobileNumber, emailId)
-                                        Toast.makeText(context, "Mobile verified!", Toast.LENGTH_SHORT).show()
-                                        onLoginSuccess()
+                                        errorMessage = "Incorrect OTP code. Please enter the valid 6-digit code received via SMS."
                                     }
                                 }
                             },
-                            enabled = !isVerifyingOtp && enteredOtp.isNotBlank(),
+                            enabled = !isVerifyingOtp && enteredOtp.length == 6,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -648,22 +541,8 @@ fun LoginScreen(
                                         canResend = false
                                         val newCode = (100000 + (Math.random() * 900000).toInt()).toString()
                                         expectedOtpCode = newCode
-                                        infoMessage = "New OTP sent to +91 $mobileNumber. Code is: $newCode"
-                                        if (context is Activity) {
-                                            PhoneAuthHelper.resendVerificationCode(
-                                                activity = context,
-                                                phoneNumber = "+91$mobileNumber",
-                                                onCodeSent = { vId ->
-                                                    verificationId = vId
-                                                },
-                                                onVerificationCompleted = {
-                                                    val clientName = fullName.trim().ifBlank { "Client" }
-                                                    viewModel.login(clientName, mobileNumber, emailId)
-                                                    onLoginSuccess()
-                                                },
-                                                onVerificationFailed = { _ -> }
-                                            )
-                                        }
+                                        SmsGatewayHelper.dispatchSmsOtp(context, mobileNumber, newCode)
+                                        infoMessage = "New verification OTP sent to +91 $mobileNumber via SMS."
                                     }
                                 },
                                 enabled = canResend

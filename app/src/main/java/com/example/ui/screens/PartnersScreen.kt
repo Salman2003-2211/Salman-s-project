@@ -471,24 +471,24 @@ fun PartnerProfileCard(
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
-                    contentPadding = PaddingValues(horizontal = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
                     Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Call Now", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("Call", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                 }
 
                 // WhatsApp
                 Button(
                     onClick = onWhatsAppClick,
-                    modifier = Modifier.weight(1.1f).height(40.dp),
+                    modifier = Modifier.weight(1.2f).height(40.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                    contentPadding = PaddingValues(horizontal = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
                     Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false)
                 }
 
                 // Book Meeting
@@ -496,11 +496,11 @@ fun PartnerProfileCard(
                     onClick = onBookMeetingClick,
                     modifier = Modifier.weight(1.2f).height(40.dp),
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
                     Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Book Meeting", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("Meeting", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                 }
             }
         }

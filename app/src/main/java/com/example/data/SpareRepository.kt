@@ -7,13 +7,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-class SpareRepository {
+class SpareRepository(private val sessionManager: UserSessionManager? = null) {
 
-    private val _isLoggedIn = MutableStateFlow(false)
+    private val _isLoggedIn = MutableStateFlow(sessionManager?.isLoggedIn() ?: false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
     private val _userProfile = MutableStateFlow(
-        UserProfile(
+        sessionManager?.loadProfile() ?: UserProfile(
             id = "usr_client",
             fullName = "",
             mobileNumber = "",
@@ -50,24 +50,33 @@ class SpareRepository {
             )
         }
         _isLoggedIn.value = true
+        sessionManager?.saveSession(
+            name = cleanName,
+            phone = phone.trim(),
+            email = email.trim(),
+            isVerified = true
+        )
     }
 
     fun logout() {
         _isLoggedIn.value = false
+        sessionManager?.clearSession()
     }
 
     fun updateProfile(name: String, phone: String, email: String) {
         _userProfile.update {
             it.copy(
-                fullName = name,
-                mobileNumber = phone,
-                email = email
+                fullName = name.trim(),
+                mobileNumber = phone.trim(),
+                email = email.trim()
             )
         }
+        sessionManager?.updateProfile(name, phone, email)
     }
 
     fun setLanguage(language: AppLanguage) {
         _userProfile.update { it.copy(language = language) }
+        sessionManager?.setLanguage(language)
     }
 
     fun toggleFavorite(propertyId: String) {

@@ -424,11 +424,11 @@ fun LeadershipContactCard(
                     modifier = Modifier.weight(1f).height(42.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                    contentPadding = PaddingValues(horizontal = 6.dp)
                 ) {
                     Icon(Icons.Filled.Phone, contentDescription = "Call", modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Call", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Call", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                 }
 
                 // WhatsApp Button
@@ -437,11 +437,11 @@ fun LeadershipContactCard(
                     modifier = Modifier.weight(1.2f).height(42.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                    contentPadding = PaddingValues(horizontal = 6.dp)
                 ) {
                     Icon(Icons.Filled.Chat, contentDescription = "WhatsApp", modifier = Modifier.size(16.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false)
                 }
 
                 // Email Button (if email available)
@@ -450,11 +450,11 @@ fun LeadershipContactCard(
                         onClick = onEmailClick,
                         modifier = Modifier.weight(1f).height(42.dp),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp)
                     ) {
                         Icon(Icons.Filled.Email, contentDescription = "Email", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Email", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Email", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     }
                 }
             }

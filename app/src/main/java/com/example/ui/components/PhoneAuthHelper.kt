@@ -36,7 +36,11 @@ object PhoneAuthHelper {
                     }
 
                     override fun onVerificationFailed(e: FirebaseException) {
-                        Log.e(TAG, "Verification failed: ${e.message}", e)
+                        if (e.message?.contains("CONFIGURATION_NOT_FOUND") == true) {
+                            Log.w(TAG, "Firebase Phone Auth not enabled in Firebase Console (CONFIGURATION_NOT_FOUND). Falling back to SMS gateway.")
+                        } else {
+                            Log.e(TAG, "Verification failed: ${e.message}", e)
+                        }
                         onVerificationFailed(e)
                     }
 

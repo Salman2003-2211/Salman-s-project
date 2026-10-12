@@ -120,7 +120,7 @@ fun PropertyDetailModal(
                     ) {
                         Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Call", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Call", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
 
                     Button(
@@ -137,7 +137,7 @@ fun PropertyDetailModal(
                     ) {
                         Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("WhatsApp", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                        Text("WhatsApp", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }

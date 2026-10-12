@@ -453,7 +453,7 @@ fun LeadsInboxSheetContent(
                                     ) {
                                         Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(13.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Call", fontSize = 11.sp)
+                                        Text("Call", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                     }
 
                                     Button(
@@ -464,7 +464,7 @@ fun LeadsInboxSheetContent(
                                     ) {
                                         Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.White)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("WhatsApp", fontSize = 11.sp, color = Color.White)
+                                        Text("WhatsApp", fontSize = 11.sp, color = Color.White, maxLines = 1, softWrap = false)
                                     }
                                 }
 

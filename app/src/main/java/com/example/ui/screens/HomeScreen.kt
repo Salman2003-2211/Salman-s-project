@@ -729,29 +729,39 @@ fun TrendingPropertyCard(
                 Text(
                     text = "Posted by: ${property.postedBy} (${property.ownerName})",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .padding(end = 8.dp)
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     FilledTonalButton(
                         onClick = onCallClick,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.defaultMinSize(minWidth = 64.dp, minHeight = 34.dp)
                     ) {
                         Icon(Icons.Filled.Phone, contentDescription = "Call", modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Call", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Call", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     }
 
                     Button(
                         onClick = onWhatsAppClick,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                        modifier = Modifier.defaultMinSize(minWidth = 96.dp, minHeight = 34.dp)
                     ) {
                         Icon(Icons.Filled.Chat, contentDescription = "WhatsApp", modifier = Modifier.size(14.dp), tint = Color.White)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -763,12 +773,15 @@ fun TrendingPropertyCard(
 fun SpecBadge(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.wrapContentWidth()
     ) {
         Text(
             text = text,
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
