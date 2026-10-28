@@ -1,8 +1,8 @@
 // Unit verification for Cloud Functions logic & security gates
-const { generatePropertyDescription, askRealEstateAdvisor, evaluateLoanEligibility } = require("./lib/index");
+const { generatePropertyDescription, askRealEstateAdvisor, evaluateLoanEligibility, onUserCreated } = require("./lib/index");
 
 async function runTests() {
-  console.log("=== Testing Cloud Functions Security Gates & Logic ===");
+  console.log("=== Testing Cloud Functions Security Gates, Auth Triggers & Logic ===");
   let passed = 0;
   let total = 0;
 
@@ -68,7 +68,20 @@ async function runTests() {
     }
   }
 
-  console.log(`\nResults: ${passed}/${total} security and validation tests passed.`);
+  // Test 5: onUserCreated trigger exports and function signature
+  total++;
+  try {
+    if (typeof onUserCreated === "function" || (onUserCreated && typeof onUserCreated.run === "function")) {
+      console.log("PASS: Test 5 - onUserCreated Auth trigger is properly exported as a Cloud Function.");
+      passed++;
+    } else {
+      console.error("FAIL: Test 5 - onUserCreated is not a valid Cloud Function trigger.");
+    }
+  } catch (err) {
+    console.error("FAIL: Test 5 unexpected error:", err);
+  }
+
+  console.log(`\nResults: ${passed}/${total} security, auth trigger, and validation tests passed.`);
   process.exit(passed === total ? 0 : 1);
 }
 

@@ -1,10 +1,29 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import * as functions from "firebase-functions/v1";
 import { initializeApp, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { GoogleGenAI } from "@google/genai";
 
 if (!getApps().length) {
   initializeApp();
+}
+
+/**
+ * Helper to get Firestore instance supporting both named database and default fallback.
+ */
+function getFirestoreDb() {
+  const customDbId =
+    process.env.FIRESTORE_DATABASE_ID ||
+    "ai-studio-android-spare-08ffc41b-afd1-4513-bbf2-1f321e6fc32a";
+  try {
+    if (customDbId && customDbId !== "(default)") {
+      return getFirestore(customDbId);
+    }
+  } catch (e) {
+    console.warn("Could not connect to custom Firestore database ID, falling back to default:", e);
+  }
+  return getFirestore();
 }
 
 // Securely access Gemini API key defined in Firebase Secrets or environment
@@ -257,3 +276,57 @@ Return a JSON object with this exact structure:
     }
   }
 );
+
+/**
+ * 4. onUserCreated (Auth Trigger)
+ * Automatically creates a user profile document in the Firestore database (/users/{userId})
+ * whenever a new user signs up via Firebase Authentication (Google, Phone, Email, etc.).
+ */
+export const onUserCreated = functions.auth.user().onCreate(async (user) => {
+  const uid = user.uid;
+  console.log(`[onUserCreated] Triggered for user UID: ${uid}`);
+
+  const displayName =
+    user.displayName ||
+    (user.email ? user.email.split("@")[0] : null) ||
+    (user.phoneNumber ? `User ${user.phoneNumber.slice(-4)}` : "New User");
+
+  const phoneNumber = user.phoneNumber || "+910000000000";
+
+  const userProfile = {
+    userId: uid,
+    fullName: displayName.slice(0, 100),
+    phoneNumber: phoneNumber,
+    email: user.email || "",
+    language: "en",
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  const db = getFirestoreDb();
+  try {
+    const userDocRef = db.collection("users").doc(uid);
+    const docSnap = await userDocRef.get();
+    if (!docSnap.exists) {
+      await userDocRef.set(userProfile);
+      console.log(`[onUserCreated] Profile document created in Firestore for UID: ${uid}`);
+    } else {
+      console.log(`[onUserCreated] Profile document already exists for UID: ${uid}`);
+    }
+  } catch (primaryErr: any) {
+    console.error(`[onUserCreated] Failed to write to primary Firestore instance:`, primaryErr);
+    // Fallback to default database instance
+    try {
+      const defaultDb = getFirestore();
+      const fallbackRef = defaultDb.collection("users").doc(uid);
+      const snap = await fallbackRef.get();
+      if (!snap.exists) {
+        await fallbackRef.set(userProfile);
+        console.log(`[onUserCreated] Created profile document in fallback (default) database for UID: ${uid}`);
+      }
+    } catch (fallbackErr) {
+      console.error(`[onUserCreated] Fallback creation failed:`, fallbackErr);
+      throw fallbackErr;
+    }
+  }
+});
