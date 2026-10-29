@@ -1,10 +1,7 @@
 {
-  "firestore": [
-    {
-      "database": "ai-studio-android-spare-08ffc41b-afd1-4513-bbf2-1f321e6fc32a",
-      "rules": "firestore.rules"
-    }
-  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "functions": [
     {
       "source": "functions",
