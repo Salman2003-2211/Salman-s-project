@@ -3,6 +3,7 @@ import { defineSecret } from "firebase-functions/params";
 import * as functions from "firebase-functions/v1";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { GoogleGenAI } from "@google/genai";
 
 if (!getApps().length) {
@@ -330,3 +331,116 @@ export const onUserCreated = functions.auth.user().onCreate(async (user) => {
     }
   }
 });
+
+/**
+ * 5. cleanupExpiredProperties (Automated 30-Day Auto-Expiry & Storage Cleanup)
+ * Scheduled to run daily to identify unsold property listings older than 30 days,
+ * delete their photos from Firebase Storage under:
+ *   properties/{ownerId}_{ownerName}/{purpose}_{propertyId}/
+ * and remove the property document from Firestore (along with associated leads).
+ */
+export const cleanupExpiredProperties = functions.pubsub
+  .schedule("every 24 hours")
+  .timeZone("Asia/Kolkata")
+  .onRun(async (_context) => {
+    return await executePropertyCleanup();
+  });
+
+/**
+ * Callable endpoint to trigger cleanup on demand (e.g., admin dashboard or maintenance).
+ */
+export const triggerManualCleanupExpiredProperties = onCall(
+  {
+    cors: true,
+    maxInstances: 2,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication required to run cleanup job.");
+    }
+    const result = await executePropertyCleanup();
+    return { success: true, result };
+  }
+);
+
+async function executePropertyCleanup() {
+  console.log("[executePropertyCleanup] Starting 30-day listing cleanup cycle...");
+  const db = getFirestoreDb();
+  const now = new Date();
+  let deletedCount = 0;
+  let errorCount = 0;
+
+  try {
+    // 1. Identify all unsold properties where expiresAt <= now
+    const expiredSnap = await db
+      .collection("properties")
+      .where("expiresAt", "<=", now)
+      .where("isSold", "==", false)
+      .get();
+
+    console.log(`[executePropertyCleanup] Found ${expiredSnap.size} expired listings.`);
+    let bucket: any = null;
+    try {
+      bucket = getStorage().bucket();
+    } catch (bErr) {
+      console.warn("[executePropertyCleanup] Default storage bucket not initialized:", bErr);
+    }
+
+    for (const doc of expiredSnap.docs) {
+      const data = doc.data();
+      const propertyId = doc.id;
+      const ownerId = data.ownerId || data.userId || "owner";
+      const rawName = (data.ownerName || "owner").trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+      const purpose = (data.listingType || "RENT").toUpperCase().trim();
+
+      // Folder structure: properties/{ownerId}_{ownerName}/{purpose}_{propertyId}/
+      const folderPrefix = `properties/${ownerId}_${rawName}/${purpose}_${propertyId}/`;
+
+      // 2. Delete associated photo files from Firebase Storage
+      if (bucket) {
+        try {
+          console.log(`[executePropertyCleanup] Purging photos in storage prefix: ${folderPrefix}`);
+          await bucket.deleteFiles({ prefix: folderPrefix });
+        } catch (storageErr) {
+          console.warn(`[executePropertyCleanup] Could not delete storage prefix ${folderPrefix}:`, storageErr);
+        }
+      }
+
+      // 3. Delete any property lead entries linked to this property
+      try {
+        const leadsSnap = await db
+          .collection("property_leads")
+          .where("propertyId", "==", propertyId)
+          .get();
+
+        if (!leadsSnap.empty) {
+          const batch = db.batch();
+          leadsSnap.docs.forEach((lead) => batch.delete(lead.ref));
+          await batch.commit();
+        }
+      } catch (leadsErr) {
+        console.warn(`[executePropertyCleanup] Could not delete leads for ${propertyId}:`, leadsErr);
+      }
+
+      // 4. Delete the property document from Firestore
+      try {
+        await doc.ref.delete();
+        deletedCount++;
+        console.log(`[executePropertyCleanup] Deleted expired property document: ${propertyId}`);
+      } catch (docErr) {
+        console.error(`[executePropertyCleanup] Failed to delete property document ${propertyId}:`, docErr);
+        errorCount++;
+      }
+    }
+
+    return {
+      totalFound: expiredSnap.size,
+      deletedCount,
+      errorCount,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (err: any) {
+    console.error("[executePropertyCleanup] Fatal cleanup error:", err);
+    throw new HttpsError("internal", "Cleanup process encountered an error: " + (err.message || "Unknown"));
+  }
+}

@@ -1,7 +1,12 @@
 package com.example.ui.screens
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -22,17 +27,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.model.BookedMeeting
 import com.example.model.MeetingStatus
 import com.example.model.Partner
 import com.example.ui.SpareViewModel
 import com.example.ui.components.IntentHelper
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,8 +50,10 @@ fun PartnersScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val partners by viewModel.partners.collectAsState()
     val bookedMeetings by viewModel.bookedMeetings.collectAsState()
+    val myPartnerApplication by viewModel.myPartnerApplication.collectAsState()
 
     var activeSubTab by remember { mutableIntStateOf(0) } // 0: Explore Partners, 1: My Booked Meetings
     var selectedSpecialization by remember { mutableStateOf("All Partners") }
@@ -53,23 +64,30 @@ fun PartnersScreen(
 
     val specializations = listOf(
         "All Partners",
-        "Residential Specialists",
-        "Commercial & Retail",
-        "Plot & Land Deals",
+        "Residential",
+        "Commercial",
+        "Plots & Land",
+        "Agricultural",
+        "Rent / Lease",
         "Home Loan & Legal Assistance"
     )
 
     val filteredPartners = remember(partners, selectedSpecialization, localityFilter) {
         partners.filter { p ->
+            // Public list ONLY displays documents where status == "APPROVED"
+            val isApproved = p.status == "APPROVED"
             val matchesSpec = if (selectedSpecialization == "All Partners") true else {
-                p.specializations.any { it.contains(selectedSpecialization, ignoreCase = true) }
+                p.specializations.any { it.contains(selectedSpecialization, ignoreCase = true) } ||
+                p.dealTypes.any { it.contains(selectedSpecialization, ignoreCase = true) }
             }
             val matchesLocality = if (localityFilter.isBlank()) true else {
                 p.operatingAreas.any { it.contains(localityFilter, ignoreCase = true) } ||
-                        p.agencyName.contains(localityFilter, ignoreCase = true) ||
-                        p.name.contains(localityFilter, ignoreCase = true)
+                p.areas.any { it.contains(localityFilter, ignoreCase = true) } ||
+                p.agencyName.contains(localityFilter, ignoreCase = true) ||
+                p.businessName.contains(localityFilter, ignoreCase = true) ||
+                p.name.contains(localityFilter, ignoreCase = true)
             }
-            matchesSpec && matchesLocality
+            isApproved && matchesSpec && matchesLocality
         }
     }
 
@@ -177,53 +195,226 @@ fun PartnersScreen(
                         }
                     }
 
-                    // 4. 'Join as a Partner' Banner (For New Agents/Brokers)
+                    // 4. Dealer Status / 'Join as a Partner' Banner
                     item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showRegisterPartnerModal = true }
-                                .testTag("join_partner_banner"),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-                        ) {
-                            Box(
+                        if (myPartnerApplication != null) {
+                            val app = myPartnerApplication!!
+                            when (app.status) {
+                                "PENDING_APPROVAL" -> {
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("partner_pending_review_banner"),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFF59E0B))
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        Icons.Filled.HourglassTop,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFFB45309),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "Application Under Review",
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF92400E)
+                                                    )
+                                                }
+
+                                                Surface(
+                                                    color = Color(0xFFFDE68A),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "PENDING_APPROVAL",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = Color(0xFF92400E),
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                            Text(
+                                                text = "Application submitted successfully! Your profile is under review and will go live once verified by our team.",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color(0xFF78350F),
+                                                lineHeight = 18.sp
+                                            )
+
+                                            Spacer(modifier = Modifier.height(12.dp))
+
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = Color.White.copy(alpha = 0.9f),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    Text(
+                                                        text = "${app.name} • ${app.displayBusinessName}",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF1E293B)
+                                                    )
+                                                    Text(
+                                                        text = "Areas: ${app.displayAreas.joinToString(", ")}",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF475569),
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    )
+                                                    Text(
+                                                        text = "Deals In: ${app.displayDealTypes.joinToString(", ")} • Exp: ${app.experienceYears} Yrs",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF2563EB),
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "APPROVED" -> {
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("partner_approved_banner"),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Verified,
+                                                contentDescription = null,
+                                                tint = Color(0xFF15803D),
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Verified Partner Profile Active",
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF166534)
+                                                )
+                                                Text(
+                                                    text = "Your dealer profile is active and verified by admin. Clients can now find you on S.P.A.RE.",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF15803D)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showRegisterPartnerModal = true }
+                                            .testTag("partner_rejected_banner"),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEE2E2)),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Info,
+                                                contentDescription = null,
+                                                tint = Color(0xFFB91C1C),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Application Status: ${app.status}",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF991B1B)
+                                                )
+                                                Text(
+                                                    text = "Tap here to update and resubmit your dealer partner profile.",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFFB91C1C)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(Color(0xFF0F172A), Color(0xFF1E3A8A))
-                                        )
-                                    )
-                                    .padding(16.dp)
+                                    .clickable { showRegisterPartnerModal = true }
+                                    .testTag("join_partner_banner"),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(Color(0xFF0F172A), Color(0xFF1E3A8A))
+                                            )
+                                        )
+                                        .padding(16.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Are you a Real Estate Agent or Broker?",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = "Grow your business with verified high-intent leads on S.P.A.RE.",
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF93C5FD),
-                                            modifier = Modifier.padding(top = 2.dp)
-                                        )
-                                    }
-
-                                    Button(
-                                        onClick = { showRegisterPartnerModal = true },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Register", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Are you a Real Estate Agent or Broker?",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = "Register to receive verified buyer/seller leads and expand your reach.",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF93C5FD),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+
+                                        Button(
+                                            onClick = { showRegisterPartnerModal = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Register", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        }
                                     }
                                 }
                             }
@@ -324,17 +515,8 @@ fun PartnersScreen(
         // Register as Partner Dialog
         if (showRegisterPartnerModal) {
             RegisterPartnerDialog(
-                onDismiss = { showRegisterPartnerModal = false },
-                onRegister = { name, firm, area, phone ->
-                    viewModel.repository.registerPartner(
-                        name = name,
-                        agencyName = firm,
-                        operatingAreas = listOf(area),
-                        specializations = listOf("Residential Specialists", "Plot & Land Deals"),
-                        phone = phone
-                    )
-                    showRegisterPartnerModal = false
-                }
+                viewModel = viewModel,
+                onDismiss = { showRegisterPartnerModal = false }
             )
         }
     }
@@ -408,7 +590,7 @@ fun PartnerProfileCard(
                     }
 
                     Text(
-                        text = partner.agencyName,
+                        text = partner.displayBusinessName,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFF0F766E),
@@ -416,11 +598,20 @@ fun PartnerProfileCard(
                     )
 
                     Text(
-                        text = "Specializes in: ${partner.operatingAreas.joinToString(", ")}",
+                        text = "Areas: ${partner.displayAreas.joinToString(", ")}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         modifier = Modifier.padding(top = 2.dp)
                     )
+
+                    if (partner.displayDealTypes.isNotEmpty()) {
+                        Text(
+                            text = "Deals in: ${partner.displayDealTypes.joinToString(", ")}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF2563EB),
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             }
 
@@ -648,79 +839,417 @@ fun BookMeetingDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegisterPartnerDialog(
-    onDismiss: () -> Unit,
-    onRegister: (name: String, firm: String, area: String, phone: String) -> Unit
+    viewModel: SpareViewModel,
+    onDismiss: () -> Unit
 ) {
-    var agentName by remember { mutableStateOf("") }
-    var firmName by remember { mutableStateOf("") }
-    var operatingArea by remember { mutableStateOf("Noida & Greater Noida") }
-    var phone by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val userProfile by viewModel.userProfile.collectAsState()
+
+    var fullName by remember { mutableStateOf(userProfile.fullName) }
+    var businessName by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf(userProfile.mobileNumber.replace("+91", "").trim()) }
+    var email by remember { mutableStateOf(userProfile.email) }
+    var operatingAreas by remember { mutableStateOf("") }
+    var experienceYears by remember { mutableStateOf("3") }
+
+    val allDealTypes = listOf("Residential", "Commercial", "Plots", "Agricultural", "Rent/Sale")
+    var selectedDealTypes by remember { mutableStateOf(setOf("Residential", "Rent/Sale")) }
+
+    var uploadedDocs by remember { mutableStateOf(listOf<PropertyPhotoItem>()) }
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var businessError by remember { mutableStateOf<String?>(null) }
+    var phoneError by remember { mutableStateOf<String?>(null) }
+    var areaError by remember { mutableStateOf<String?>(null) }
+    var dealTypeError by remember { mutableStateOf<String?>(null) }
+
+    val docPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 3)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val newItems = uris.mapIndexed { idx, uri ->
+                PropertyPhotoItem(
+                    id = "partner_doc_${System.currentTimeMillis()}_$idx",
+                    uri = uri,
+                    name = "Doc ${uploadedDocs.size + idx + 1}"
+                )
+            }
+            uploadedDocs = (uploadedDocs + newItems).take(3)
+        }
+    }
+
+    fun validate(): Boolean {
+        var isValid = true
+        if (fullName.trim().length < 2) {
+            nameError = "Please enter contact person name (min 2 chars)"
+            isValid = false
+        } else {
+            nameError = null
+        }
+
+        if (businessName.trim().isBlank()) {
+            businessError = "Please enter agency or business name"
+            isValid = false
+        } else {
+            businessError = null
+        }
+
+        val digits = phone.filter { it.isDigit() }
+        if (digits.length != 10) {
+            phoneError = "Please enter a valid 10-digit mobile number"
+            isValid = false
+        } else {
+            phoneError = null
+        }
+
+        if (operatingAreas.trim().isBlank()) {
+            areaError = "Please specify operating areas / cities (e.g. Noida, Dwarka)"
+            isValid = false
+        } else {
+            areaError = null
+        }
+
+        if (selectedDealTypes.isEmpty()) {
+            dealTypeError = "Please select at least one deal category"
+            isValid = false
+        } else {
+            dealTypeError = null
+        }
+
+        return isValid
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Register as Channel Partner", fontWeight = FontWeight.Bold) },
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        title = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Handshake,
+                        contentDescription = null,
+                        tint = Color(0xFF2563EB),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Partner Registration", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Text(
+                    text = "Register as a verified Dealer, Broker, or Builder on S.P.A.RE",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text("Join S.P.A.RE's verified network of property advisors.", fontSize = 12.sp, color = Color(0xFF64748B))
-
-                Spacer(modifier = Modifier.height(10.dp))
-
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // 1. Full Name / Contact Person
                 OutlinedTextField(
-                    value = agentName,
-                    onValueChange = { agentName = it },
-                    placeholder = { Text("Your Full Name") },
+                    value = fullName,
+                    onValueChange = {
+                        fullName = it
+                        if (nameError != null) nameError = null
+                    },
+                    label = { Text("Full Name / Contact Person *") },
+                    isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = !isSubmitting
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
+                // 2. Agency / Business Name
                 OutlinedTextField(
-                    value = firmName,
-                    onValueChange = { firmName = it },
-                    placeholder = { Text("Agency / Firm Name") },
+                    value = businessName,
+                    onValueChange = {
+                        businessName = it
+                        if (businessError != null) businessError = null
+                    },
+                    label = { Text("Agency / Business Name *") },
+                    placeholder = { Text("e.g. Apex Realty Advisors") },
+                    isError = businessError != null,
+                    supportingText = businessError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = !isSubmitting
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // 3. Phone Number & Email
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = {
+                            if (it.length <= 10 && it.all { c -> c.isDigit() }) {
+                                phone = it
+                                if (phoneError != null) phoneError = null
+                            }
+                        },
+                        label = { Text("Phone *") },
+                        prefix = { Text("+91 ") },
+                        isError = phoneError != null,
+                        supportingText = phoneError?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) } },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.weight(1.1f),
+                        shape = RoundedCornerShape(10.dp),
+                        enabled = !isSubmitting
+                    )
 
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Email (Optional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.weight(0.9f),
+                        shape = RoundedCornerShape(10.dp),
+                        enabled = !isSubmitting
+                    )
+                }
+
+                // 4. Operating Areas / Cities
                 OutlinedTextField(
-                    value = operatingArea,
-                    onValueChange = { operatingArea = it },
-                    placeholder = { Text("Operating Sector / City") },
+                    value = operatingAreas,
+                    onValueChange = {
+                        operatingAreas = it
+                        if (areaError != null) areaError = null
+                    },
+                    label = { Text("Operating Areas / Cities *") },
+                    placeholder = { Text("e.g. Noida Sector 62, Greater Noida, Dwarka") },
+                    isError = areaError != null,
+                    supportingText = areaError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = !isSubmitting
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // 5. Deals In (Multi-choice)
+                Column {
+                    Text("Deals In *", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        allDealTypes.forEach { deal ->
+                            val isSelected = selectedDealTypes.contains(deal)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedDealTypes = if (isSelected) {
+                                        selectedDealTypes - deal
+                                    } else {
+                                        selectedDealTypes + deal
+                                    }
+                                    if (dealTypeError != null) dealTypeError = null
+                                },
+                                label = { Text(deal, fontSize = 11.sp) },
+                                enabled = !isSubmitting
+                            )
+                        }
+                    }
+                    if (dealTypeError != null) {
+                        Text(dealTypeError!!, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    }
+                }
 
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    placeholder = { Text("Mobile Number (+91)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // 6. Experience (Years)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Experience in Business:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("1", "3", "5", "10+").forEach { exp ->
+                            FilterChip(
+                                selected = experienceYears == exp.replace("+", ""),
+                                onClick = { experienceYears = exp.replace("+", "") },
+                                label = { Text("$exp Yrs", fontSize = 11.sp) },
+                                enabled = !isSubmitting
+                            )
+                        }
+                    }
+                }
+
+                // 7. Optional Uploads (Profile Photo / Visiting Card / RERA Certificate)
+                Column {
+                    Text(
+                        "Upload Documents (Optional - Visiting Card / Photo / RERA)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                docPickerLauncher.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            },
+                            enabled = !isSubmitting && uploadedDocs.size < 3,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select Files (${uploadedDocs.size}/3)", fontSize = 11.sp)
+                        }
+
+                        Text(
+                            text = if (uploadedDocs.isEmpty()) "No files chosen" else "${uploadedDocs.size} file(s) attached",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    if (uploadedDocs.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            uploadedDocs.forEachIndexed { index, doc ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                                ) {
+                                    if (doc.uri != null) {
+                                        AsyncImage(
+                                            model = doc.uri,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else if (doc.bitmap != null) {
+                                        Image(
+                                            bitmap = doc.bitmap.asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            uploadedDocs = uploadedDocs.filterIndexed { i, _ -> i != index }
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(20.dp)
+                                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Remove",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (agentName.isNotBlank() && phone.isNotBlank()) {
-                        onRegister(agentName, firmName.ifBlank { "Independent Broker" }, operatingArea, phone)
+                    if (validate() && !isSubmitting) {
+                        isSubmitting = true
+                        coroutineScope.launch {
+                            val parsedAreas = operatingAreas
+                                .split(",", ";", "•")
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                            val cleanAreas = if (parsedAreas.isEmpty()) listOf(operatingAreas.trim()) else parsedAreas
+                            val expYears = experienceYears.toIntOrNull() ?: 3
+                            val cleanPhone = "+91${phone.filter { it.isDigit() }}"
+
+                            val result = viewModel.registerPartner(
+                                context = context,
+                                name = fullName.trim(),
+                                businessName = businessName.trim(),
+                                phone = cleanPhone,
+                                email = email.trim(),
+                                areas = cleanAreas,
+                                dealTypes = selectedDealTypes.toList(),
+                                experienceYears = expYears,
+                                documents = uploadedDocs
+                            )
+
+                            isSubmitting = false
+                            if (result.isSuccess) {
+                                Toast.makeText(
+                                    context,
+                                    "Application submitted successfully! Your profile is under review and will go live once verified by our team.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                onDismiss()
+                            } else {
+                                val err = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                                Toast.makeText(
+                                    context,
+                                    "Submission failed: $err",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
                     }
                 },
+                enabled = !isSubmitting,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
             ) {
-                Text("Submit Registration")
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Submitting...")
+                } else {
+                    Text("Submit Application")
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isSubmitting
+            ) {
+                Text("Cancel")
+            }
         }
     )
 }

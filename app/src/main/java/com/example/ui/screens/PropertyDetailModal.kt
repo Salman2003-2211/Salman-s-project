@@ -71,7 +71,7 @@ fun PropertyDetailModal(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleFavorite(property.id) }) {
+                    IconButton(onClick = { viewModel.toggleFavorite(property.id, context) }) {
                         Icon(
                             imageVector = if (property.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = "Save",
@@ -97,6 +97,27 @@ fun PropertyDetailModal(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Interested Heart Toggle Button
+                    IconButton(
+                        onClick = { viewModel.toggleFavorite(property.id, context) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (property.isFavorite) Color(0xFFFEE2E2) else Color(0xFFF1F5F9))
+                            .border(
+                                1.dp,
+                                if (property.isFavorite) Color(0xFFEF4444) else Color(0xFFCBD5E1),
+                                RoundedCornerShape(12.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (property.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = "Interested",
+                            tint = if (property.isFavorite) Color(0xFFEF4444) else Color(0xFF64748B),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
                     // Firestore Lead Submission Button
                     Button(
                         onClick = {

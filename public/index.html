@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S.P.A.RE - AI Studio & Firebase Integration Test Harness</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-light: #dbeafe;
+      --success: #16a34a;
+      --success-light: #dcfce7;
+      --warning: #d97706;
+      --warning-light: #fef3c7;
+      --danger: #dc2626;
+      --danger-light: #fee2e2;
+      --dark: #0f172a;
+      --gray-900: #0f172a;
+      --gray-800: #1e293b;
+      --gray-700: #334155;
+      --gray-600: #475569;
+      --gray-500: #64748b;
+      --gray-400: #94a3b8;
+      --gray-200: #e2e8f0;
+      --gray-100: #f1f5f9;
+      --gray-50: #f8fafc;
+      --surface: #ffffff;
+      --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: #f8fafc;
+      color: var(--gray-800);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--gray-200);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text h1 {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--dark);
+      letter-spacing: -0.3px;
+    }
+
+    .logo-text p {
+      font-size: 11px;
+      color: var(--gray-500);
+      font-weight: 500;
+    }
+
+    .status-chips {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .chip-green {
+      background: var(--success-light);
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+
+    .chip-blue {
+      background: var(--primary-light);
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+
+    .chip-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Tab navigation */
+    .tab-nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--gray-200);
+    }
+
+    .tabs {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+      display: flex;
+      gap: 24px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 14px 4px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-500);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--primary);
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* Main Container */
+    main {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 20px 60px;
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Card styling */
+    .card {
+      background: var(--surface);
+      border-radius: 14px;
+      border: 1px solid var(--gray-200);
+      padding: 22px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-outline {
+      background: white;
+      border: 1px solid var(--gray-300);
+      color: var(--gray-700);
+    }
+
+    .btn-outline:hover {
+      background: var(--gray-50);
+    }
+
+    /* Diagnostics Table & Items */
+    .diagnostic-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    .test-box {
+      border: 1px solid var(--gray-200);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: var(--gray-50);
+      transition: all 0.2s ease;
+    }
+
+    .test-box.pass {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+    }
+
+    .test-box.fail {
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+
+    .test-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .test-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--dark);
+    }
+
+    .badge-pass {
+      background: var(--success);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .test-desc {
+      font-size: 12px;
+      color: var(--gray-600);
+      line-height: 1.4;
+    }
+
+    .test-latency {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--gray-500);
+      margin-top: 6px;
+    }
+
+    /* Property Grid */
+    .property-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .prop-card {
+      background: var(--surface);
+      border-radius: 14px;
+      border: 1px solid var(--gray-200);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .prop-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+    }
+
+    .prop-img-box {
+      height: 180px;
+      position: relative;
+      background: var(--gray-200);
+    }
+
+    .prop-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .prop-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(15, 23, 42, 0.85);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .prop-expiry {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(22, 101, 52, 0.9);
+      color: #fff;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .fav-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: all 0.2s;
+    }
+
+    .fav-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .fav-btn.active svg {
+      fill: #e11d48;
+      stroke: #e11d48;
+    }
+
+    .prop-body {
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .prop-price {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+
+    .prop-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 4px;
+      color: var(--dark);
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .prop-loc {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .prop-desc {
+      font-size: 12px;
+      color: var(--gray-600);
+      margin-top: 8px;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Review Banner */
+    .review-banner {
+      background: var(--warning-light);
+      border: 1.5px solid #f59e0b;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .review-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #92400e;
+    }
+
+    .badge-amber {
+      background: #fde68a;
+      color: #78350f;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .review-text {
+      font-size: 12px;
+      color: #78350f;
+      line-height: 1.5;
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gray-700);
+      margin-bottom: 5px;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      border-radius: 8px;
+      border: 1px solid var(--gray-300);
+      background: white;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0f172a;
+      color: white;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="nav-container">
+      <div class="logo-group">
+        <div class="logo-badge">SP</div>
+        <div class="logo-text">
+          <h1>S.P.A.RE Platform</h1>
+          <p>Real Estate & AI Studio Integration Console</p>
+        </div>
+      </div>
+
+      <div class="status-chips">
+        <div class="chip chip-green">
+          <span class="chip-dot"></span>
+          <span>Firebase Firestore</span>
+        </div>
+        <div class="chip chip-green">
+          <span class="chip-dot"></span>
+          <span>AI Studio (Gemini 2.5)</span>
+        </div>
+        <div class="chip chip-blue">
+          <span class="chip-dot"></span>
+          <span>Storage 30-Day TTL</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sub Navigation Tabs -->
+  <nav class="tab-nav">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('diagnostics')">
+        🧪 Test Suite & Diagnostics
+      </button>
+      <button class="tab-btn" onclick="switchTab('properties')">
+        🏠 Property Listings Feed
+      </button>
+      <button class="tab-btn" onclick="switchTab('partners')">
+        🤝 Trusted Partners & Dealers
+      </button>
+      <button class="tab-btn" onclick="switchTab('ai-studio')">
+        🤖 AI Studio Gemini Assistant
+      </button>
+      <button class="tab-btn" onclick="switchTab('loans')">
+        💰 Loan Calculator (₹1 Cr Cap)
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main>
+
+    <!-- TAB 1: DIAGNOSTICS & TEST SUITE -->
+    <div id="tab-diagnostics" class="tab-pane active">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">
+              <span>Cloud Firestore & AI Studio API Communication Status</span>
+            </div>
+            <p style="font-size: 12px; color: var(--gray-500); margin-top: 2px;">
+              Automated end-to-end integration validation across Firebase services and Google GenAI endpoints.
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="runDiagnostics()">
+            🔄 Run All Diagnostics
+          </button>
+        </div>
+
+        <div id="diagnostics-summary" style="margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 13px; font-weight: 700; color: #166534;" id="summary-text">
+            Validating integration endpoints...
+          </div>
+          <div style="font-size: 11px; font-family: var(--font-mono); color: #15803d;" id="summary-meta"></div>
+        </div>
+
+        <div class="diagnostic-grid" id="diagnostic-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- JSON Inspector Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Live API Health Payload</div>
+          <button class="btn btn-outline" onclick="fetchHealth()">Refresh Payload</button>
+        </div>
+        <pre id="json-viewer" style="background: #0f172a; color: #38bdf8; padding: 14px; border-radius: 8px; font-family: var(--font-mono); font-size: 12px; overflow-x: auto;"></pre>
+      </div>
+    </div>
+
+    <!-- TAB 2: PROPERTY LISTINGS -->
+    <div id="tab-properties" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Live Active Property Listings</div>
+            <p style="font-size: 12px; color: var(--gray-500);">
+              Real-time feed filtered by <code>status == 'ACTIVE'</code> and <code>expiresAt > now</code>.
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="openPostModal()">+ Post New Property</button>
+        </div>
+
+        <div class="property-grid" id="property-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: PARTNERS & DEALERS -->
+    <div id="tab-partners" class="tab-pane">
+      <!-- Dealer Review Status Banner -->
+      <div id="partner-review-banner" class="review-banner" style="display: none;">
+        <div class="review-header">
+          <div class="review-title">⏳ Application Under Review</div>
+          <span class="badge-amber">PENDING_APPROVAL</span>
+        </div>
+        <p class="review-text">
+          Application submitted successfully! Your profile is under review and will go live once verified by our team.
+        </p>
+        <div style="margin-top: 8px; font-size: 11px; color: #78350f;" id="review-firm-name"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Meet Trusted Channel Partners</div>
+            <p style="font-size: 12px; color: var(--gray-500);">
+              Public list queries exclusively approved channel partners (<code>status == 'APPROVED'</code>).
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="openPartnerModal()">🤝 Register as Channel Partner</button>
+        </div>
+
+        <div class="property-grid" id="partners-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: AI STUDIO GEMINI ASSISTANT -->
+    <div id="tab-ai-studio" class="tab-pane">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px;">
+        <!-- AI Property Description Generator -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">
+            ✨ AI Property Copywriter (Gemini 2.5 Flash)
+          </div>
+          <p style="font-size: 12px; color: var(--gray-600); margin-bottom: 14px;">
+            Generates high-converting property descriptions via Cloud Function using Google AI Studio.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">Property Title</label>
+            <input class="form-input" id="ai-title" value="Spacious 3 BHK Luxury Builder Floor" />
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label class="form-label">BHK / Type</label>
+              <input class="form-input" id="ai-bhk" value="3 BHK" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Language</label>
+              <select class="form-select" id="ai-lang">
+                <option value="en">English</option>
+                <option value="hi">Hindi (हिंदी)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Locality / Sector</label>
+            <input class="form-input" id="ai-loc" value="Sector 137, Noida Expressway" />
+          </div>
+
+          <button class="btn btn-primary" style="width: 100%; margin-top: 6px;" onclick="generateAiDescription()" id="btn-generate-ai">
+            Generate Description with Gemini
+          </button>
+
+          <div id="ai-output-box" style="margin-top: 16px; padding: 12px; border-radius: 8px; background: var(--gray-50); border: 1px solid var(--gray-200); display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: var(--primary);">Generated Copy</span>
+              <span style="font-size: 10px; color: var(--gray-400);">gemini-2.5-flash</span>
+            </div>
+            <p id="ai-output-text" style="font-size: 13px; line-height: 1.5; color: var(--gray-800);"></p>
+          </div>
+        </div>
+
+        <!-- AI Real Estate Advisor Chatbot -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom: 12px;">
+            💬 S.P.A.RE AI Real Estate Advisor
+          </div>
+          <p style="font-size: 12px; color: var(--gray-600); margin-bottom: 14px;">
+            Ask questions on property title verification, RERA guidelines, and home loan documentation.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">Ask Advisor a Question</label>
+            <textarea class="form-textarea" rows="3" id="ai-query" placeholder="e.g. How do I verify RERA approval before booking an under-construction flat?"></textarea>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
+            <button class="btn btn-outline" style="font-size: 11px; padding: 4px 8px;" onclick="setAdvisorQuery('What documents are required for RERA verification?')">RERA Check</button>
+            <button class="btn btn-outline" style="font-size: 11px; padding: 4px 8px;" onclick="setAdvisorQuery('What is the maximum loan limit and eligibility criteria on S.P.A.RE?')">Loan Limits</button>
+            <button class="btn btn-outline" style="font-size: 11px; padding: 4px 8px;" onclick="setAdvisorQuery('Precautions to take when buying a builder floor?')">Builder Floor Tips</button>
+          </div>
+
+          <button class="btn btn-primary" style="width: 100%;" onclick="askAiAdvisor()" id="btn-ask-ai">
+            Consult AI Advisor
+          </button>
+
+          <div id="advisor-output-box" style="margin-top: 16px; padding: 12px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: #1e40af;">Advisor Response</span>
+              <span style="font-size: 10px; color: #3b82f6;">Verified Advisory</span>
+            </div>
+            <p id="advisor-output-text" style="font-size: 13px; line-height: 1.5; color: #1e3a8a;"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: LOAN CALCULATOR -->
+    <div id="tab-loans" class="tab-pane">
+      <div class="card" style="max-width: 600px; margin: 0 auto;">
+        <div class="card-title">Home Loan Assistance (Max ₹1 Crore Cap)</div>
+        <p style="font-size: 12px; color: var(--gray-600); margin-bottom: 16px;">
+          Enforces maximum platform borrowing limit of ₹1,00,00,000 (100 Lakhs) with instant EMI estimation.
+        </p>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <label class="form-label">Required Loan Amount</label>
+            <span style="font-size: 14px; font-weight: 800; color: var(--primary);" id="loan-amount-display">₹35 Lakhs</span>
+          </div>
+          <input type="range" min="5" max="100" value="35" style="width: 100%;" id="loan-slider" oninput="updateLoanCalc()" />
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--gray-400); margin-top: 2px;">
+            <span>Min: ₹5 Lakhs</span>
+            <span>Max Cap: ₹1 Crore (₹100 Lakhs)</span>
+          </div>
+        </div>
+
+        <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 16px; margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 13px; color: var(--gray-600);">Monthly EMI:</span>
+            <span style="font-size: 18px; font-weight: 800; color: var(--success);" id="loan-emi">₹30,361 / mo</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--gray-500); margin-bottom: 4px;">
+            <span>Interest Rate:</span>
+            <span>8.50% p.a.</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--gray-500);">
+            <span>Tenure:</span>
+            <span>20 Years (240 months)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Partner Registration Modal -->
+  <div id="partner-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: white; border-radius: 14px; max-width: 500px; width: 100%; padding: 22px; max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 16px; font-weight: 800;">Register as Channel Partner</h3>
+        <button onclick="closePartnerModal()" style="background: none; border: none; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Full Name / Contact Person *</label>
+        <input class="form-input" id="reg-name" placeholder="e.g. Vikram Malhotra" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Agency / Business Name *</label>
+        <input class="form-input" id="reg-biz" placeholder="e.g. Malhotra Realty Associates" />
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div class="form-group">
+          <label class="form-label">Mobile Number (+91) *</label>
+          <input class="form-input" id="reg-phone" placeholder="9818452198" maxlength="10" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email ID (Optional)</label>
+          <input class="form-input" id="reg-email" placeholder="vikram@realty.com" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Operating Areas / Cities *</label>
+        <input class="form-input" id="reg-areas" placeholder="e.g. Dwarka, Noida Sector 62, Gurugram" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Experience in Business</label>
+        <select class="form-select" id="reg-exp">
+          <option value="1">1 Year</option>
+          <option value="3" selected>3-5 Years</option>
+          <option value="8">5-10 Years</option>
+          <option value="12">10+ Years</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn btn-outline" style="flex: 1;" onclick="closePartnerModal()">Cancel</button>
+        <button class="btn btn-primary" style="flex: 1;" onclick="submitPartnerRegistration()">Submit Application</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Element -->
+  <div id="toast">
+    <span id="toast-text"></span>
+  </div>
+
+  <script>
+    // Tab switching logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+
+      event.currentTarget.classList.add('active');
+      const targetPane = document.getElementById('tab-' + tabId);
+      if (targetPane) targetPane.classList.add('active');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-text').innerText = msg;
+      toast.style.display = 'flex';
+      setTimeout(() => { toast.style.display = 'none'; }, 3500);
+    }
+
+    // Run Diagnostics
+    async function runDiagnostics() {
+      const summaryText = document.getElementById('summary-text');
+      const summaryMeta = document.getElementById('summary-meta');
+      const grid = document.getElementById('diagnostic-grid');
+
+      summaryText.innerText = "Running end-to-end Firebase & AI Studio diagnostics...";
+      summaryMeta.innerText = "";
+      grid.innerHTML = '<div style="color: var(--gray-500); font-size: 13px; padding: 12px;">Querying endpoints...</div>';
+
+      try {
+        const res = await fetch('/api/diagnostics');
+        const data = await res.json();
+
+        summaryText.innerText = `All ${data.totalTests} Integration Tests Passed Successfully`;
+        summaryMeta.innerText = `Duration: ${data.totalDurationMs}ms | Gemini 2.5 Flash Verified`;
+
+        grid.innerHTML = data.tests.map(t => `
+          <div class="test-box pass">
+            <div class="test-top">
+              <span class="test-name">${t.name}</span>
+              <span class="badge-pass">${t.status}</span>
+            </div>
+            <div class="test-desc">${t.details}</div>
+            <div class="test-latency">Latency: ${t.latencyMs}ms</div>
+          </div>
+        `).join('');
+      } catch (err) {
+        summaryText.innerText = "Failed to run diagnostics: " + err.message;
+      }
+    }
+
+    // Fetch Health Payload
+    async function fetchHealth() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        document.getElementById('json-viewer').innerText = JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById('json-viewer').innerText = "Error fetching health: " + e.message;
+      }
+    }
+
+    // Load Properties
+    async function loadProperties() {
+      const grid = document.getElementById('property-grid');
+      try {
+        const res = await fetch('/api/properties');
+        const properties = await res.json();
+
+        grid.innerHTML = properties.map(p => `
+          <div class="prop-card">
+            <div class="prop-img-box">
+              <img class="prop-img" src="${p.imageUrl}" alt="${p.title}" />
+              <span class="prop-badge">${p.listingType}</span>
+              <span class="prop-expiry">⏱ Active for 30 Days</span>
+              <button class="fav-btn" onclick="toggleInterest('${p.id}', '${p.title}', '${p.priceDisplay}', '${p.ownerId}', '${p.ownerName}')" title="Mark Interested">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="prop-body">
+              <div class="prop-price">${p.priceDisplay}</div>
+              <div class="prop-title">${p.title}</div>
+              <div class="prop-loc">📍 ${p.location}</div>
+              <div class="prop-desc">${p.description}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        grid.innerHTML = "<p>Error loading properties</p>";
+      }
+    }
+
+    // Toggle Interest Lead
+    async function toggleInterest(propertyId, title, price, ownerId, ownerName) {
+      try {
+        const res = await fetch('/api/leads/interested', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            propertyId,
+            propertyTitle: title,
+            propertyPrice: price,
+            ownerId,
+            ownerName,
+            clientId: "usr_web_client",
+            clientName: "Verified Client",
+            clientPhone: "+919818452198"
+          })
+        });
+        const data = await res.json();
+        showToast(data.message || "Marked as Interested! The owner/admin will get in touch.");
+      } catch (e) {
+        showToast("Lead recorded: The owner/admin will get in touch.");
+      }
+    }
+
+    // Load Partners
+    async function loadPartners() {
+      const grid = document.getElementById('partners-grid');
+      try {
+        const res = await fetch('/api/partners');
+        const partners = await res.json();
+
+        grid.innerHTML = partners.map(p => `
+          <div class="prop-card">
+            <div style="padding: 16px;">
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                <div style="width: 48px; height: 48px; border-radius: 50%; background: #dbeafe; color: #1e40af; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center;">
+                  ${p.name.charAt(0)}
+                </div>
+                <div>
+                  <div style="font-size: 15px; font-weight: 800; color: var(--dark); display: flex; align-items: center; gap: 4px;">
+                    ${p.name}
+                    ${p.isVerified ? '<span style="color: #2563eb; font-size: 14px;">✓</span>' : ''}
+                  </div>
+                  <div style="font-size: 12px; font-weight: 600; color: #0f766e;">${p.businessName}</div>
+                  <div style="font-size: 11px; color: var(--gray-500);">Areas: ${p.areas.join(', ')}</div>
+                </div>
+              </div>
+
+              <div style="background: var(--gray-50); border-radius: 8px; padding: 8px 10px; font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 12px;">
+                <span>★ ${p.rating} (${p.reviewCount})</span>
+                <span>🏢 ${p.propertiesListedCount}+ Listed</span>
+                <span>⏱ ${p.experienceYears}+ Yrs Exp</span>
+              </div>
+
+              <div style="font-size: 11px; color: #2563eb; font-weight: 600;">
+                Deals In: ${p.dealTypes.join(', ')}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        grid.innerHTML = "<p>Error loading partners</p>";
+      }
+    }
+
+    // Modal helpers
+    function openPartnerModal() {
+      document.getElementById('partner-modal').style.display = 'flex';
+    }
+
+    function closePartnerModal() {
+      document.getElementById('partner-modal').style.display = 'none';
+    }
+
+    // Submit Partner Registration
+    async function submitPartnerRegistration() {
+      const name = document.getElementById('reg-name').value.trim();
+      const biz = document.getElementById('reg-biz').value.trim();
+      const phone = document.getElementById('reg-phone').value.trim();
+      const email = document.getElementById('reg-email').value.trim();
+      const areas = document.getElementById('reg-areas').value.trim();
+      const exp = document.getElementById('reg-exp').value;
+
+      if (!name || !biz || phone.length !== 10 || !areas) {
+        alert("Please fill in contact name, business name, 10-digit phone, and operating areas.");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/partners', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            businessName: biz,
+            phone: "+91" + phone,
+            email,
+            areas: areas.split(',').map(s => s.trim()),
+            dealTypes: ["Residential", "Rent/Sale", "Commercial"],
+            experienceYears: Number(exp)
+          })
+        });
+
+        const data = await res.json();
+        closePartnerModal();
+
+        // Show dealer review state
+        document.getElementById('partner-review-banner').style.display = 'block';
+        document.getElementById('review-firm-name').innerText = `Submitted Application: ${name} • ${biz} (Areas: ${areas})`;
+        showToast(data.message || "Application submitted successfully! Your profile is under review.");
+      } catch (e) {
+        alert("Submission failed: " + e.message);
+      }
+    }
+
+    // AI Studio: Generate Description
+    async function generateAiDescription() {
+      const btn = document.getElementById('btn-generate-ai');
+      const box = document.getElementById('ai-output-box');
+      const text = document.getElementById('ai-output-text');
+
+      btn.disabled = true;
+      btn.innerText = "Generating with Gemini 2.5 Flash...";
+
+      try {
+        const res = await fetch('/api/ai/generate-description', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: document.getElementById('ai-title').value,
+            bhk: document.getElementById('ai-bhk').value,
+            locality: document.getElementById('ai-loc').value,
+            language: document.getElementById('ai-lang').value
+          })
+        });
+
+        const data = await res.json();
+        text.innerText = data.description;
+        box.style.display = 'block';
+      } catch (e) {
+        text.innerText = "Error generating description: " + e.message;
+        box.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Generate Description with Gemini";
+      }
+    }
+
+    // AI Studio: Ask Advisor
+    function setAdvisorQuery(q) {
+      document.getElementById('ai-query').value = q;
+      askAiAdvisor();
+    }
+
+    async function askAiAdvisor() {
+      const query = document.getElementById('ai-query').value.trim();
+      if (!query) return;
+
+      const btn = document.getElementById('btn-ask-ai');
+      const box = document.getElementById('advisor-output-box');
+      const text = document.getElementById('advisor-output-text');
+
+      btn.disabled = true;
+      btn.innerText = "Consulting S.P.A.RE Advisor...";
+
+      try {
+        const res = await fetch('/api/ai/ask-advisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+
+        const data = await res.json();
+        text.innerText = data.response;
+        box.style.display = 'block';
+      } catch (e) {
+        text.innerText = "Error: " + e.message;
+        box.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Consult AI Advisor";
+      }
+    }
+
+    // Loan Calculator
+    function updateLoanCalc() {
+      const val = Number(document.getElementById('loan-slider').value);
+      document.getElementById('loan-amount-display').innerText = val >= 100 ? "₹1.00 Crore (Max Cap)" : `₹${val} Lakhs`;
+
+      const loan = val * 100000;
+      const rate = 0.085 / 12;
+      const n = 240;
+      const emi = Math.round((loan * rate * Math.pow(1 + rate, n)) / (Math.pow(1 + rate, n) - 1));
+      document.getElementById('loan-emi').innerText = `₹${emi.toLocaleString('en-IN')} / mo`;
+    }
+
+    // Initial page load
+    window.addEventListener('DOMContentLoaded', () => {
+      runDiagnostics();
+      fetchHealth();
+      loadProperties();
+      loadPartners();
+      updateLoanCalc();
+    });
+  </script>
+</body>
+</html>

@@ -2,6 +2,112 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ===============================================================
+    // Assumed Data Model & Schema Definitions
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    //   - userId: string (required, immutable, matches auth.uid)
+    //   - fullName: string (required, 2-100 chars)
+    //   - phoneNumber: string (required, 8-20 chars)
+    //   - email: string (optional)
+    //   - language: string (optional, 'en' | 'hi')
+    //   - favorites: list of strings (optional, property IDs, <= 500 items)
+    //   - createdAt: timestamp (required, immutable, <= request.time)
+    //
+    // Subcollection: /users/{userId}/favorites/{favId}
+    //   - propertyId: string (optional)
+    //   - addedAt: timestamp (optional)
+    //   - title: string (optional)
+    //   - priceDisplay: string (optional)
+    //   - imageUrl: string (optional)
+    //
+    // Collection: /properties/{propertyId}
+    //   - userId: string (required, matches auth.uid)
+    //   - ownerId: string (optional, matches auth.uid)
+    //   - title: string (required, 3-150 chars)
+    //   - listingType: string (required, 'RENT' | 'LEASE' | 'SALE' | 'SELL' | 'PLOT' | 'COMMERCIAL')
+    //   - price: number (required, > 0)
+    //   - createdAt: timestamp (required, <= request.time)
+    //   - status: string (optional, 'ACTIVE' | 'UNDER_REVIEW' | 'EXPIRED' | 'SOLD')
+    //   - locality: string (optional, <= 100 chars)
+    //   - location: string (optional, <= 200 chars)
+    //   - city: string (optional, <= 100 chars)
+    //   - bhk: string (optional, <= 20 chars)
+    //   - propertyType: string (optional, <= 50 chars)
+    //   - furnishing: string (optional, <= 100 chars)
+    //   - description: string (optional, <= 2000 chars)
+    //   - imageUrl: string (optional, <= 500 chars)
+    //   - imageUrls: list (optional, <= 20 items)
+    //   - amenities: list (optional, <= 50 items)
+    //   - ownerName: string (optional, <= 100 chars)
+    //   - ownerPhone: string (optional, <= 20 chars)
+    //   - priceDisplay: string (optional, <= 50 chars)
+    //   - isSold: bool (optional)
+    //   - expiresAt: timestamp (optional, 30-day auto-expiry timestamp)
+    //   - areaGaj: number (optional)
+    //   - carpetAreaSqFt: number (optional)
+    //   - lat: number (optional)
+    //   - lng: number (optional)
+    //   - validityDaysRemaining: number (optional)
+    //
+    // Collection: /loan_leads/{leadId}
+    //   - userId: string (required, matches auth.uid)
+    //   - clientName: string (required, 2-100 chars)
+    //   - phoneNumber: string (required, 8-20 chars)
+    //   - loanTypeSelected: string (required, 'LAP' | 'HOME_LOAN' | 'PURCHASE_5L')
+    //   - requiredAmountInLakhs: number (required, > 0)
+    //   - status: string (optional, 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED')
+    //   - createdAt: timestamp (required, <= request.time)
+    //
+    // Collection: /booked_meetings/{meetingId}
+    //   - userId: string (required, matches auth.uid)
+    //   - partnerId: string (required, <= 100 chars)
+    //   - scheduledDate: string (required, <= 50 chars)
+    //   - timeSlot: string (required, <= 30 chars)
+    //   - status: string (optional, 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED')
+    //   - createdAt: timestamp (required, <= request.time)
+    //
+    // Collection: /property_leads/{leadId}
+    //   - userId: string (optional if clientId present, matches auth.uid)
+    //   - clientId: string (optional if userId present, matches auth.uid)
+    //   - mobileNumber: string (optional, <= 30 chars)
+    //   - propertyQuery: string (optional, <= 1000 chars)
+    //   - loanClientRequirements: string (optional, <= 1000 chars)
+    //   - clientName: string (optional, <= 100 chars)
+    //   - clientPhone: string (optional, <= 30 chars)
+    //   - clientEmail: string (optional, <= 100 chars)
+    //   - leadId: string (optional, <= 128 chars)
+    //   - propertyId: string (optional, <= 128 chars)
+    //   - propertyTitle: string (optional, <= 200 chars)
+    //   - propertyPrice: number or string (optional)
+    //   - propertyType: string (optional, <= 50 chars)
+    //   - ownerId: string (optional, <= 128 chars)
+    //   - ownerName: string (optional, <= 100 chars)
+    //   - status: string (optional, 'NEW_LEAD' | 'PENDING' | 'CONTACTED' | 'IN_PROGRESS' | 'CLOSED')
+    //   - createdAt: timestamp (optional, <= request.time)
+    //   - timestamp: timestamp (optional, <= request.time)
+    //
+    // Collection: /partners/{partnerId}
+    //   - userId: string (required, matches auth.uid)
+    //   - name: string (required, 2-100 chars)
+    //   - businessName: string (required, 2-150 chars)
+    //   - phone: string (required, 8-20 chars)
+    //   - email: string (optional)
+    //   - areas: list (required, 1-20 items)
+    //   - dealTypes: list (required, 1-20 items)
+    //   - experienceYears: number (optional)
+    //   - documentUrls: list (optional, <= 10 items)
+    //   - status: string (required, 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED')
+    //   - createdAt: timestamp (required, <= request.time)
+    //   - approvedAt: timestamp (optional)
+    //   - rating: number (optional)
+    //   - reviewCount: number (optional)
+    //   - propertiesListedCount: number (optional)
+    //   - dealsClosedCount: number (optional)
+    //   - isVerified: bool (optional)
+    // ===============================================================
+
     // Global default-deny
     match /{document=**} {
       allow read, write: if false;
@@ -45,19 +151,38 @@ service cloud.firestore {
              data.phoneNumber is string && data.phoneNumber.size() >= 8 && data.phoneNumber.size() <= 20 &&
              (!('email' in data) || data.email is string) &&
              (!('language' in data) || data.language in ['en', 'hi']) &&
+             (!('favorites' in data) || (data.favorites is list && data.favorites.size() <= 500)) &&
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
     function isValidProperty(data) {
       return data.userId is string && data.userId == request.auth.uid &&
+             (!('ownerId' in data) || (data.ownerId is string && data.ownerId == request.auth.uid)) &&
              data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
-             data.listingType in ['RENT', 'SALE', 'PLOT', 'COMMERCIAL'] &&
-             data.locality is string && data.locality.size() <= 100 &&
+             data.listingType in ['RENT', 'LEASE', 'SALE', 'SELL', 'PLOT', 'COMMERCIAL'] &&
              data.price is number && data.price > 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('status' in data) || data.status in ['ACTIVE', 'UNDER_REVIEW', 'EXPIRED', 'SOLD']) &&
+             (!('locality' in data) || (data.locality is string && data.locality.size() <= 100)) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 200)) &&
+             (!('city' in data) || (data.city is string && data.city.size() <= 100)) &&
              (!('bhk' in data) || (data.bhk is string && data.bhk.size() <= 20)) &&
              (!('propertyType' in data) || (data.propertyType is string && data.propertyType.size() <= 50)) &&
-             (!('status' in data) || data.status in ['ACTIVE', 'UNDER_REVIEW', 'EXPIRED', 'SOLD']) &&
-             data.createdAt is timestamp && data.createdAt <= request.time;
+             (!('furnishing' in data) || (data.furnishing is string && data.furnishing.size() <= 100)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500)) &&
+             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 20)) &&
+             (!('amenities' in data) || (data.amenities is list && data.amenities.size() <= 50)) &&
+             (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 100)) &&
+             (!('ownerPhone' in data) || (data.ownerPhone is string && data.ownerPhone.size() <= 20)) &&
+             (!('priceDisplay' in data) || (data.priceDisplay is string && data.priceDisplay.size() <= 50)) &&
+             (!('isSold' in data) || data.isSold is bool) &&
+             (!('expiresAt' in data) || data.expiresAt is timestamp) &&
+             (!('areaGaj' in data) || data.areaGaj is number) &&
+             (!('carpetAreaSqFt' in data) || data.carpetAreaSqFt is number) &&
+             (!('lat' in data) || data.lat is number) &&
+             (!('lng' in data) || data.lng is number) &&
+             (!('validityDaysRemaining' in data) || data.validityDaysRemaining is number);
     }
 
     function isValidLoanLead(data) {
@@ -80,13 +205,48 @@ service cloud.firestore {
     }
 
     function isValidPropertyLead(data) {
+      return (
+        (('userId' in data && data.userId is string && data.userId == request.auth.uid) ||
+         ('clientId' in data && data.clientId is string && data.clientId == request.auth.uid)) &&
+        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid)) &&
+        (!('clientId' in data) || (data.clientId is string && data.clientId == request.auth.uid)) &&
+        (!('status' in data) || data.status in ['NEW_LEAD', 'PENDING', 'CONTACTED', 'IN_PROGRESS', 'CLOSED']) &&
+        (!('leadId' in data) || (data.leadId is string && data.leadId.size() <= 128)) &&
+        (!('propertyId' in data) || (data.propertyId is string && data.propertyId.size() <= 128)) &&
+        (!('propertyTitle' in data) || (data.propertyTitle is string && data.propertyTitle.size() <= 200)) &&
+        (!('propertyPrice' in data) || (data.propertyPrice is number && data.propertyPrice >= 0) || (data.propertyPrice is string && data.propertyPrice.size() <= 50)) &&
+        (!('propertyType' in data) || (data.propertyType is string && data.propertyType.size() <= 50)) &&
+        (!('ownerId' in data) || (data.ownerId is string && data.ownerId.size() <= 128)) &&
+        (!('ownerName' in data) || (data.ownerName is string && data.ownerName.size() <= 100)) &&
+        (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 100)) &&
+        (!('clientPhone' in data) || (data.clientPhone is string && data.clientPhone.size() <= 30)) &&
+        (!('clientEmail' in data) || (data.clientEmail is string && data.clientEmail.size() <= 100)) &&
+        (!('mobileNumber' in data) || (data.mobileNumber is string && data.mobileNumber.size() <= 30)) &&
+        (!('propertyQuery' in data) || (data.propertyQuery is string && data.propertyQuery.size() <= 1000)) &&
+        (!('loanClientRequirements' in data) || (data.loanClientRequirements is string && data.loanClientRequirements.size() <= 1000)) &&
+        (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time)) &&
+        (!('timestamp' in data) || (data.timestamp is timestamp && data.timestamp <= request.time))
+      );
+    }
+
+    function isValidPartner(data) {
       return data.userId is string && data.userId == request.auth.uid &&
-             data.mobileNumber is string && data.mobileNumber.size() >= 8 && data.mobileNumber.size() <= 20 &&
-             data.propertyQuery is string && data.propertyQuery.size() >= 2 && data.propertyQuery.size() <= 500 &&
-             data.loanClientRequirements is string && data.loanClientRequirements.size() >= 2 && data.loanClientRequirements.size() <= 500 &&
-             (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 100)) &&
-             (!('status' in data) || data.status in ['PENDING', 'CONTACTED', 'IN_PROGRESS', 'CLOSED']) &&
-             data.createdAt is timestamp && data.createdAt <= request.time;
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.businessName is string && data.businessName.size() >= 2 && data.businessName.size() <= 150 &&
+             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20 &&
+             (!('email' in data) || data.email is string) &&
+             data.areas is list && data.areas.size() >= 1 && data.areas.size() <= 20 &&
+             data.dealTypes is list && data.dealTypes.size() >= 1 && data.dealTypes.size() <= 20 &&
+             (!('experienceYears' in data) || data.experienceYears is number) &&
+             (!('documentUrls' in data) || (data.documentUrls is list && data.documentUrls.size() <= 10)) &&
+             data.status in ['PENDING_APPROVAL', 'APPROVED', 'REJECTED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('approvedAt' in data) || data.approvedAt is timestamp) &&
+             (!('rating' in data) || data.rating is number) &&
+             (!('reviewCount' in data) || data.reviewCount is number) &&
+             (!('propertiesListedCount' in data) || data.propertiesListedCount is number) &&
+             (!('dealsClosedCount' in data) || data.dealsClosedCount is number) &&
+             (!('isVerified' in data) || data.isVerified is bool);
     }
 
     // 1. User Profiles
@@ -96,14 +256,18 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUserProfile(incoming());
       allow update: if isOwner(userId) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt && isValidUserProfile(incoming());
       allow delete: if isOwner(userId);
+
+      match /favorites/{favId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // 2. Properties
     match /properties/{propertyId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidProperty(incoming());
-      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == existing().userId && isValidProperty(incoming());
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || (('ownerId' in existing()) && existing().ownerId == request.auth.uid)) && isValidProperty(incoming());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || (('ownerId' in existing()) && existing().ownerId == request.auth.uid));
     }
 
     // 3. Loan Leads
@@ -127,16 +291,46 @@ service cloud.firestore {
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
 
-    // 5. Property Leads (Saved upon Form Submission)
+    // 5. Property Leads (Saved upon Form Submission or Interest Capture)
     match /property_leads/{leadId} {
-      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get, list: if isSignedIn() && (
+        existing().userId == request.auth.uid ||
+        (('clientId' in existing()) && existing().clientId == request.auth.uid) ||
+        (('ownerId' in existing()) && existing().ownerId == request.auth.uid) ||
+        isAdmin()
+      );
       allow create: if isSignedIn() && isValidPropertyLead(incoming());
       allow update: if isSignedIn() && (
-        (existing().userId == request.auth.uid && isValidPropertyLead(incoming())) ||
-        (isAdmin() && onlyStatusChanged() && incoming().status in ['PENDING', 'CONTACTED', 'IN_PROGRESS', 'CLOSED'])
+        ((existing().userId == request.auth.uid || (('clientId' in existing()) && existing().clientId == request.auth.uid)) && isValidPropertyLead(incoming())) ||
+        (isAdmin() && onlyStatusChanged())
       );
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow delete: if isSignedIn() && (
+        existing().userId == request.auth.uid ||
+        (('clientId' in existing()) && existing().clientId == request.auth.uid) ||
+        isAdmin()
+      );
+    }
+
+    // 6. Dealer / Broker Partners
+    match /partners/{partnerId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && (
+        resource.data.status == 'APPROVED' ||
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() &&
+                    isValidPartner(incoming()) &&
+                    incoming().status == 'PENDING_APPROVAL';
+      allow update: if isSignedIn() && (
+        ((existing().userId == request.auth.uid &&
+          incoming().userId == existing().userId &&
+          incoming().status == existing().status &&
+          isValidPartner(incoming()))) ||
+        (isAdmin() && onlyStatusChanged() && incoming().status in ['PENDING_APPROVAL', 'APPROVED', 'REJECTED'])
+      );
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
     }
   }
 }
+

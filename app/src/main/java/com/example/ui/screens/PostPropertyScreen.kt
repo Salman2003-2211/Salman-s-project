@@ -204,6 +204,8 @@ fun PostPropertyScreen(
     var isNegotiable by remember { mutableStateOf(true) }
 
     var validationError by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var uploadStatus by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
     Scaffold(
@@ -256,7 +258,8 @@ fun PostPropertyScreen(
                     Text("Select your listing category.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 18.dp))
 
                     val listingChoices = listOf(
-                        ListingType.RENT to ("Rent / Lease" to Icons.Filled.Key),
+                        ListingType.RENT to ("Rent" to Icons.Filled.Key),
+                        ListingType.LEASE to ("Lease" to Icons.Filled.Assignment),
                         ListingType.SALE to ("Sell Property" to Icons.Filled.Sell),
                         ListingType.PLOT to ("Plot / Land" to Icons.Filled.Landscape),
                         ListingType.COMMERCIAL to ("Commercial" to Icons.Filled.Business)
@@ -710,8 +713,8 @@ fun PostPropertyScreen(
                     Text("Step 6: Pricing Details", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                     Text("Set fair market pricing for fast inquiries.", fontSize = 13.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
 
-                    if (listingType == ListingType.RENT) {
-                        Text("Monthly Rent (₹)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    if (listingType == ListingType.RENT || listingType == ListingType.LEASE) {
+                        Text(if (listingType == ListingType.RENT) "Monthly Rent (₹)" else "Monthly Lease Amount (₹)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = rentAmount,
@@ -846,7 +849,8 @@ fun PostPropertyScreen(
                         }
                     } else {
                         // Final Submit
-                        val priceNum = if (listingType == ListingType.RENT) {
+                        val isMonthly = listingType == ListingType.RENT || listingType == ListingType.LEASE
+                        val priceNum = if (isMonthly) {
                             rentAmount.toDoubleOrNull() ?: 0.0
                         } else {
                             (salePriceLakhs.toDoubleOrNull() ?: 0.0) * 100000.0
@@ -855,32 +859,17 @@ fun PostPropertyScreen(
                             validationError = "Please go back and enter a valid price."
                             return@Button
                         }
-                        val priceDisplay = formatPriceDisplay(priceNum, monthly = listingType == ListingType.RENT)
+                        val priceDisplay = formatPriceDisplay(priceNum, monthly = isMonthly)
 
                         val resolvedLocality = localitySearch.ifBlank { "Local Area" }
                         val resolvedCity = cityName.ifBlank { "Delhi NCR" }
                         val resolvedTitle = title.ifBlank { "$bhkType $propertyType in $resolvedLocality" }
                         val resolvedDesc = description.ifBlank { "Modern and spacious $bhkType property in $resolvedLocality, $resolvedCity." }
 
-                        // Camera captures only exist as in-memory bitmaps; write the first one to
-                        // app storage so the listing keeps a cover image instead of losing it.
-                        val coverPhoto = uploadedPhotos.firstOrNull()
-                        val coverImageUrl = when {
-                            coverPhoto?.uri != null -> coverPhoto.uri.toString()
-                            coverPhoto?.bitmap != null -> try {
-                                val file = java.io.File(context.filesDir, "listing_${System.currentTimeMillis()}.jpg")
-                                java.io.FileOutputStream(file).use { out ->
-                                    coverPhoto.bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                                }
-                                Uri.fromFile(file).toString()
-                            } catch (e: Exception) {
-                                ""
-                            }
-                            else -> ""
-                        }
+                        val propertyId = "prop_${System.currentTimeMillis()}"
 
                         val newProp = Property(
-                            id = "prop_${System.currentTimeMillis()}",
+                            id = propertyId,
                             title = resolvedTitle,
                             listingType = listingType,
                             propertyType = if (listingType == ListingType.PLOT) "Plot" else propertyType,
@@ -896,45 +885,69 @@ fun PostPropertyScreen(
                             isVerified = true,
                             isOwnerListing = true,
                             postedBy = "Owner",
-                            ownerName = userProfile.fullName,
+                            ownerName = userProfile.fullName.ifBlank { "Owner" },
                             ownerPhone = userProfile.mobileNumber,
                             amenities = selectedFeatureTags.toList(),
-                            imageUrl = coverImageUrl,
+                            imageUrl = "",
+                            imageUrls = emptyList(),
                             description = resolvedDesc,
                             viewsCount = 1,
                             inquiriesCount = 0,
                             postedDate = "Just now",
                             validityDaysRemaining = 30,
+                            isSold = false,
                             status = PropertyStatus.ACTIVE,
                             lat = detectedLatitude,
-                            lng = detectedLongitude
+                            lng = detectedLongitude,
+                            createdAt = System.currentTimeMillis(),
+                            expiresAt = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000L
                         )
 
-                        viewModel.repository.postProperty(newProp)
-                        Toast.makeText(context, "Property listing published successfully!", Toast.LENGTH_LONG).show()
+                        isSubmitting = true
+                        uploadStatus = "Uploading property photos to Firebase Storage..."
 
-                        // Reset the wizard so the next listing starts clean
-                        currentStep = 1
-                        listingType = ListingType.RENT
-                        bhkType = "2 BHK"
-                        propertyType = "Builder Floor"
-                        plotSize = "150"
-                        localitySearch = ""
-                        streetAddress = ""
-                        cityName = ""
-                        pincode = ""
-                        detectedLatitude = 28.6280
-                        detectedLongitude = 77.3649
-                        uploadedPhotos = emptyList()
-                        title = ""
-                        description = ""
-                        selectedFeatureTags = setOf("Gated Society", "Park Facing", "24/7 Water", "Near Metro")
-                        rentAmount = ""
-                        securityDeposit = ""
-                        salePriceLakhs = ""
-                        isNegotiable = true
+                        coroutineScope.launch {
+                            try {
+                                viewModel.postNewProperty(
+                                    context = context,
+                                    property = newProp,
+                                    photos = uploadedPhotos
+                                ) { current, total ->
+                                    uploadStatus = "Uploading photo $current of $total to Firebase Storage..."
+                                }
 
-                        viewModel.openOverlay(ScreenOverlay.MyAds)
+                                Toast.makeText(context, "Property posted! Active for 30 days.", Toast.LENGTH_LONG).show()
+
+                                // Reset the wizard so the next listing starts clean
+                                currentStep = 1
+                                listingType = ListingType.RENT
+                                bhkType = "2 BHK"
+                                propertyType = "Builder Floor"
+                                plotSize = "150"
+                                localitySearch = ""
+                                streetAddress = ""
+                                cityName = ""
+                                pincode = ""
+                                detectedLatitude = 28.6280
+                                detectedLongitude = 77.3649
+                                uploadedPhotos = emptyList()
+                                title = ""
+                                description = ""
+                                selectedFeatureTags = setOf("Gated Society", "Park Facing", "24/7 Water", "Near Metro")
+                                rentAmount = ""
+                                securityDeposit = ""
+                                salePriceLakhs = ""
+                                isNegotiable = true
+
+                                // Refresh feed immediately by navigating to Home
+                                viewModel.setActiveTab(AppTab.HOME)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error posting property: ${e.message}", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                isSubmitting = false
+                                uploadStatus = ""
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -942,6 +955,7 @@ fun PostPropertyScreen(
                     .height(52.dp)
                     .testTag("post_property_next_button"),
                 shape = RoundedCornerShape(14.dp),
+                enabled = !isSubmitting,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (currentStep == 7) Color(0xFF059669) else Color(0xFF2563EB)
                 )
@@ -958,6 +972,30 @@ fun PostPropertyScreen(
                     modifier = Modifier.size(18.dp)
                 )
             }
+        }
+
+        // Upload progress dialog
+        if (isSubmitting) {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Publishing Listing", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF2563EB))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = uploadStatus.ifBlank { "Uploading photos..." },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                confirmButton = {}
+            )
         }
     }
 }

@@ -90,8 +90,38 @@ class SpareRepository(private val sessionManager: UserSessionManager? = null) {
         }
     }
 
+    fun syncFavoriteIds(favoriteIds: Set<String>) {
+        if (favoriteIds.isEmpty()) return
+        _properties.update { list ->
+            list.map {
+                if (it.id in favoriteIds) it.copy(isFavorite = true) else it
+            }
+        }
+    }
+
     fun postProperty(newProperty: Property) {
         _properties.update { listOf(newProperty) + it }
+    }
+
+    fun syncPropertiesFromFirestore(remoteList: List<Property>) {
+        if (remoteList.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val validRemote = remoteList.filter { !it.isSold && it.expiresAt > now && it.status == PropertyStatus.ACTIVE }
+        _properties.update { current ->
+            val remoteIds = validRemote.map { it.id }.toSet()
+            val filteredLocal = current.filter { it.id !in remoteIds && !it.isSold && it.expiresAt > now && it.status == PropertyStatus.ACTIVE }
+            validRemote + filteredLocal
+        }
+    }
+
+    fun syncPartnersFromFirestore(remoteList: List<Partner>) {
+        if (remoteList.isEmpty()) return
+        val approved = remoteList.filter { it.status == "APPROVED" }
+        _partners.update { current ->
+            val remoteIds = approved.map { it.id }.toSet()
+            val localApproved = current.filter { it.id !in remoteIds && it.status == "APPROVED" }
+            approved + localApproved
+        }
     }
 
     fun updateProperty(updated: Property) {

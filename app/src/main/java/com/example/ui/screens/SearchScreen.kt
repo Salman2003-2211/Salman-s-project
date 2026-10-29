@@ -585,7 +585,7 @@ fun SearchScreen(
                             TrendingPropertyCard(
                                 property = property,
                                 onCardClick = { viewModel.openOverlay(ScreenOverlay.PropertyDetail(property.id)) },
-                                onFavoriteClick = { viewModel.toggleFavorite(property.id) },
+                                onFavoriteClick = { viewModel.toggleFavorite(property.id, context) },
                                 onCallClick = { IntentHelper.dialPhone(context, property.ownerPhone) },
                                 onWhatsAppClick = {
                                     IntentHelper.openWhatsApp(

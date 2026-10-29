@@ -1,13 +1,9 @@
 package com.example.ui.screens
 
-import android.Manifest
 import android.app.Activity
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Context
+import android.content.ContextWrapper
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,10 +32,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.SpareViewModel
 import com.example.ui.components.PhoneAuthHelper
-import com.example.ui.components.SmsGatewayHelper
 import com.example.ui.theme.*
+import com.google.firebase.FirebaseException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Composable
 fun LoginScreen(
@@ -49,6 +57,7 @@ fun LoginScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val auth = remember { FirebaseAuth.getInstance() }
 
     var fullName by remember { mutableStateOf("") }
     var mobileNumber by remember { mutableStateOf("") }
@@ -57,67 +66,143 @@ fun LoginScreen(
     var isOtpStep by remember { mutableStateOf(false) }
     var enteredOtp by remember { mutableStateOf("") }
     var verificationId by remember { mutableStateOf<String?>(null) }
+    var resendToken by remember { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
+
     var isSendingOtp by remember { mutableStateOf(false) }
     var isVerifyingOtp by remember { mutableStateOf(false) }
-    var resendCooldown by remember { mutableStateOf(30) }
+    var resendCooldown by remember { mutableStateOf(60) }
     var canResend by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var infoMessage by remember { mutableStateOf<String?>(null) }
     var showLegalDialog by remember { mutableStateOf<String?>(null) }
-    var expectedOtpCode by remember { mutableStateOf<String?>(null) }
-    var otpIssuedAt by remember { mutableStateOf(0L) }
 
     val scrollState = rememberScrollState()
 
-    val secureRandom = remember { java.security.SecureRandom() }
-    fun newOtp(): String = (100000 + secureRandom.nextInt(900000)).toString()
-
-    // The OTP is delivered as a notification. On Android 13+ the POST_NOTIFICATIONS permission
-    // must be granted at runtime, otherwise the code is silently dropped and login is impossible.
-    var pendingSendAfterPermission by remember { mutableStateOf(false) }
-
-    fun sendOtp() {
-        isSendingOtp = true
-        val generatedCode = newOtp()
-        expectedOtpCode = generatedCode
-        otpIssuedAt = System.currentTimeMillis()
-        coroutineScope.launch {
-            delay(350)
-            SmsGatewayHelper.dispatchSmsOtp(context, mobileNumber, generatedCode)
-            isSendingOtp = false
-            isOtpStep = true
-            canResend = false
-            enteredOtp = ""
-            infoMessage = "Verification OTP sent to +91 $mobileNumber via SMS. Please check your SMS inbox."
-        }
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) {
-            errorMessage = "Please allow notifications for S.P.A.RE so the OTP can be delivered, then try again."
-            pendingSendAfterPermission = false
-        } else if (pendingSendAfterPermission) {
-            pendingSendAfterPermission = false
-            sendOtp()
-        }
-    }
-
-    fun hasNotificationPermission(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-
-    // Countdown timer for OTP resend
+    // Countdown timer for OTP resend (60 seconds)
     LaunchedEffect(isOtpStep, canResend) {
         if (isOtpStep && !canResend) {
-            resendCooldown = 30
+            resendCooldown = 60
             while (resendCooldown > 0) {
                 delay(1000L)
                 resendCooldown--
             }
             canResend = true
+        }
+    }
+
+    fun triggerPhoneVerification(isResend: Boolean = false) {
+        val activity = context.findActivity()
+        if (activity == null) {
+            errorMessage = "Unable to start phone verification: Activity context not available."
+            return
+        }
+
+        val formattedPhone = if (mobileNumber.startsWith("+")) mobileNumber else "+91$mobileNumber"
+        isSendingOtp = true
+        errorMessage = null
+
+        val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                // Instant SMS verification (auto-retrieval / instant check)
+                isSendingOtp = false
+                isVerifyingOtp = true
+                coroutineScope.launch {
+                    try {
+                        val authResult = auth.signInWithCredential(credential).await()
+                        if (authResult.user != null) {
+                            viewModel.onAuthSuccess(fullName, mobileNumber, emailId)
+                            Toast.makeText(
+                                context,
+                                "Welcome, ${fullName.trim()}! Automatically verified.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            onLoginSuccess()
+                        } else {
+                            errorMessage = "Instant verification failed. Please enter the OTP manually."
+                        }
+                    } catch (e: Exception) {
+                        errorMessage = PhoneAuthHelper.formatErrorMessage(e)
+                    } finally {
+                        isVerifyingOtp = false
+                    }
+                }
+            }
+
+            override fun onVerificationFailed(e: FirebaseException) {
+                isSendingOtp = false
+                if (isResend) canResend = true
+                errorMessage = PhoneAuthHelper.formatErrorMessage(e)
+                Toast.makeText(context, errorMessage ?: "Verification failed", Toast.LENGTH_LONG).show()
+            }
+
+            override fun onCodeSent(
+                vId: String,
+                token: PhoneAuthProvider.ForceResendingToken
+            ) {
+                verificationId = vId
+                resendToken = token
+                isSendingOtp = false
+                isOtpStep = true
+                canResend = false
+                enteredOtp = ""
+                infoMessage = "Verification OTP sent to +91 $mobileNumber via SMS. Please enter the 6-digit code."
+            }
+        }
+
+        val optionsBuilder = PhoneAuthOptions.newBuilder(auth)
+            .setPhoneNumber(formattedPhone)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(activity)
+            .setCallbacks(callbacks)
+
+        if (isResend && resendToken != null) {
+            optionsBuilder.setForceResendingToken(resendToken!!)
+        }
+
+        try {
+            PhoneAuthProvider.verifyPhoneNumber(optionsBuilder.build())
+        } catch (e: Exception) {
+            isSendingOtp = false
+            if (isResend) canResend = true
+            errorMessage = PhoneAuthHelper.formatErrorMessage(e)
+            Toast.makeText(context, errorMessage ?: "Verification failed", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun verifyOtpAndLogin() {
+        if (enteredOtp.length < 6) {
+            errorMessage = "Please enter the complete 6-digit OTP code"
+            return
+        }
+        val currentVerificationId = verificationId
+        if (currentVerificationId.isNullOrBlank()) {
+            errorMessage = "Verification session expired. Please tap 'Resend SMS OTP' to request a new code."
+            return
+        }
+
+        isVerifyingOtp = true
+        errorMessage = null
+
+        coroutineScope.launch {
+            try {
+                val credential = PhoneAuthProvider.getCredential(currentVerificationId, enteredOtp)
+                val authResult = auth.signInWithCredential(credential).await()
+                if (authResult.user != null) {
+                    viewModel.onAuthSuccess(fullName, mobileNumber, emailId)
+                    Toast.makeText(
+                        context,
+                        "Welcome, ${fullName.trim()}! Account verified successfully.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    onLoginSuccess()
+                } else {
+                    errorMessage = "Verification failed. Could not authenticate user."
+                }
+            } catch (e: Exception) {
+                errorMessage = PhoneAuthHelper.formatErrorMessage(e)
+            } finally {
+                isVerifyingOtp = false
+            }
         }
     }
 
@@ -168,7 +253,7 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Warm Greeting
+            // Greeting Header
             Text(
                 text = if (!isOtpStep) "Create Account / Login" else "Verification Code",
                 fontSize = 24.sp,
@@ -209,13 +294,13 @@ fun LoginScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "Please enter your name and 10-digit mobile number.",
+                            text = "Please enter your full name and 10-digit mobile number.",
                             fontSize = 12.sp,
                             color = Color(0xFF94A3B8),
                             modifier = Modifier.padding(top = 2.dp, bottom = 16.dp)
                         )
 
-                        // Full Name Field (Mandatory for client setup)
+                        // Full Name Field (Mandatory)
                         Text(
                             text = "Your Full Name *",
                             fontSize = 13.sp,
@@ -229,6 +314,7 @@ fun LoginScreen(
                                 fullName = it
                                 errorMessage = null
                             },
+                            enabled = !isSendingOtp,
                             placeholder = {
                                 Text("Enter your full name", fontSize = 13.sp, color = Color(0xFF64748B))
                             },
@@ -243,14 +329,15 @@ fun LoginScreen(
                                 focusedBorderColor = Color(0xFF3B82F6),
                                 unfocusedBorderColor = Color(0xFF334155),
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedTextColor = Color.White,
+                                disabledTextColor = Color.LightGray
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Mobile Number Field
+                        // Mobile Number Field (Mandatory)
                         Text(
                             text = "Mobile Number *",
                             fontSize = 13.sp,
@@ -266,6 +353,7 @@ fun LoginScreen(
                                     errorMessage = null
                                 }
                             },
+                            enabled = !isSendingOtp,
                             placeholder = {
                                 Text("10-digit mobile number", fontSize = 13.sp, color = Color(0xFF64748B))
                             },
@@ -284,7 +372,8 @@ fun LoginScreen(
                                 focusedBorderColor = Color(0xFF3B82F6),
                                 unfocusedBorderColor = Color(0xFF334155),
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedTextColor = Color.White,
+                                disabledTextColor = Color.LightGray
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
@@ -301,7 +390,11 @@ fun LoginScreen(
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedTextField(
                             value = emailId,
-                            onValueChange = { emailId = it },
+                            onValueChange = {
+                                emailId = it
+                                errorMessage = null
+                            },
+                            enabled = !isSendingOtp,
                             placeholder = {
                                 Text("Optional email address", fontSize = 13.sp, color = Color(0xFF64748B))
                             },
@@ -317,7 +410,8 @@ fun LoginScreen(
                                 focusedBorderColor = Color(0xFF3B82F6),
                                 unfocusedBorderColor = Color(0xFF334155),
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedTextColor = Color.White,
+                                disabledTextColor = Color.LightGray
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
@@ -333,16 +427,15 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Continue / Get OTP Button
+                        // Send OTP / Get OTP Button
                         Button(
                             onClick = {
                                 if (fullName.trim().length < 2) {
-                                    errorMessage = "Please enter your full name"
+                                    errorMessage = "Please enter your full name (minimum 2 characters)"
                                     return@Button
                                 }
-                                // Indian mobile numbers start with 6-9
                                 if (mobileNumber.length != 10 || mobileNumber[0] !in '6'..'9') {
-                                    errorMessage = "Please enter a valid 10-digit mobile number"
+                                    errorMessage = "Please enter a valid 10-digit Indian mobile number"
                                     return@Button
                                 }
                                 if (emailId.isNotBlank() &&
@@ -352,14 +445,9 @@ fun LoginScreen(
                                     return@Button
                                 }
                                 errorMessage = null
-                                if (!hasNotificationPermission()) {
-                                    pendingSendAfterPermission = true
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    return@Button
-                                }
-                                sendOtp()
+                                triggerPhoneVerification(isResend = false)
                             },
-                            enabled = !isSendingOtp,
+                            enabled = !isSendingOtp && !isVerifyingOtp,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -378,7 +466,7 @@ fun LoginScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text("Sending OTP...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             } else {
-                                Text("Get OTP via SMS", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Send OTP via SMS", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(Icons.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                             }
@@ -401,9 +489,16 @@ fun LoginScreen(
                                     isOtpStep = false
                                     enteredOtp = ""
                                     errorMessage = null
-                                }
+                                    infoMessage = null
+                                },
+                                enabled = !isVerifyingOtp && !isSendingOtp
                             ) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit Mobile Number", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = "Edit Mobile Number",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
 
@@ -414,7 +509,7 @@ fun LoginScreen(
                             modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
                         )
 
-                        // Status info card (SMS delivered notification banner)
+                        // Status info banner
                         if (infoMessage != null) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -446,9 +541,9 @@ fun LoginScreen(
                         }
 
                         // Modern 6-digit OTP Box Visuals
-                        Text("Enter OTP Code", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFFCBD5E1))
+                        Text("Enter 6-Digit OTP Code", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFFCBD5E1))
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -486,7 +581,7 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Hidden real input field for keyboard entry
+                        // Real keyboard input field
                         OutlinedTextField(
                             value = enteredOtp,
                             onValueChange = {
@@ -495,7 +590,8 @@ fun LoginScreen(
                                     errorMessage = null
                                 }
                             },
-                            placeholder = { Text("Type numbers here", color = Color(0xFF64748B), fontSize = 12.sp) },
+                            enabled = !isVerifyingOtp && !isSendingOtp,
+                            placeholder = { Text("Type 6 digits here", color = Color(0xFF64748B), fontSize = 12.sp) },
                             leadingIcon = {
                                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = Color(0xFF94A3B8))
                             },
@@ -508,7 +604,8 @@ fun LoginScreen(
                                 focusedBorderColor = Color(0xFF10B981),
                                 unfocusedBorderColor = Color(0xFF334155),
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedTextColor = Color.White,
+                                disabledTextColor = Color.LightGray
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
@@ -524,38 +621,10 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // Verify Button
+                        // Verify & Login Button
                         Button(
-                            onClick = {
-                                if (enteredOtp.length < 6) {
-                                    errorMessage = "Please enter the complete 6-digit OTP code"
-                                    return@Button
-                                }
-                                isVerifyingOtp = true
-                                errorMessage = null
-
-                                coroutineScope.launch {
-                                    val exp = expectedOtpCode
-                                    val clientName = fullName.trim().ifBlank { "Client" }
-
-                                    delay(300)
-                                    val expired = System.currentTimeMillis() - otpIssuedAt > 10 * 60 * 1000L
-                                    if (exp != null && expired) {
-                                        isVerifyingOtp = false
-                                        errorMessage = "This OTP has expired. Please request a new one."
-                                    } else if (exp != null && enteredOtp == exp) {
-                                        isVerifyingOtp = false
-                                        expectedOtpCode = null
-                                        viewModel.login(clientName, mobileNumber, emailId.trim())
-                                        Toast.makeText(context, "Welcome, $clientName! Account verified.", Toast.LENGTH_SHORT).show()
-                                        onLoginSuccess()
-                                    } else {
-                                        isVerifyingOtp = false
-                                        errorMessage = "Incorrect OTP code. Please enter the valid 6-digit code received via SMS."
-                                    }
-                                }
-                            },
-                            enabled = !isVerifyingOtp && enteredOtp.length == 6,
+                            onClick = { verifyOtpAndLogin() },
+                            enabled = !isVerifyingOtp && !isSendingOtp && enteredOtp.length == 6,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -582,7 +651,7 @@ fun LoginScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Resend OTP / Change Number
+                        // Resend OTP / Change Number Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -591,20 +660,18 @@ fun LoginScreen(
                             TextButton(
                                 onClick = {
                                     if (canResend) {
-                                        canResend = false
-                                        val newCode = newOtp()
-                                        expectedOtpCode = newCode
-                                        otpIssuedAt = System.currentTimeMillis()
-                                        enteredOtp = ""
-                                        SmsGatewayHelper.dispatchSmsOtp(context, mobileNumber, newCode)
-                                        infoMessage = "New verification OTP sent to +91 $mobileNumber via SMS."
+                                        triggerPhoneVerification(isResend = true)
                                     }
                                 },
-                                enabled = canResend
+                                enabled = canResend && !isSendingOtp && !isVerifyingOtp
                             ) {
                                 Text(
-                                    if (canResend) "Resend SMS OTP" else "Resend in ${resendCooldown}s",
-                                    color = if (canResend) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                    text = when {
+                                        isSendingOtp -> "Resending..."
+                                        canResend -> "Resend SMS OTP"
+                                        else -> "Resend in ${resendCooldown}s"
+                                    },
+                                    color = if (canResend && !isSendingOtp && !isVerifyingOtp) Color(0xFF38BDF8) else Color(0xFF64748B),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -615,7 +682,9 @@ fun LoginScreen(
                                     isOtpStep = false
                                     enteredOtp = ""
                                     errorMessage = null
-                                }
+                                    infoMessage = null
+                                },
+                                enabled = !isVerifyingOtp && !isSendingOtp
                             ) {
                                 Text("Change Number", color = Color(0xFF94A3B8), fontSize = 12.sp)
                             }
@@ -625,30 +694,6 @@ fun LoginScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            // Quick Guest Explore Option
-            OutlinedButton(
-                onClick = {
-                    viewModel.login("Rahul Rajpoot", "9818452198", "rahul.rajpoot@example.com")
-                    onLoginSuccess()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("explore_guest_button"),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color(0xFF93C5FD)
-                ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = Brush.horizontalGradient(listOf(Color(0xFF3B82F6), Color(0xFF60A5FA)))
-                )
-            ) {
-                Icon(Icons.Outlined.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Explore as Demo User (Instant Access)", fontSize = 13.sp)
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
 
             // Footer Disclaimer Links
             Row(

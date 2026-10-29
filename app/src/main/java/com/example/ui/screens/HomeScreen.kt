@@ -33,6 +33,8 @@ import com.example.ui.AppTab
 import com.example.ui.ScreenOverlay
 import com.example.ui.SpareViewModel
 import com.example.ui.components.IntentHelper
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.example.ui.theme.AppStrings
 
 @Composable
@@ -367,7 +369,7 @@ fun HomeScreen(
                     TrendingPropertyCard(
                         property = property,
                         onCardClick = { viewModel.openOverlay(ScreenOverlay.PropertyDetail(property.id)) },
-                        onFavoriteClick = { viewModel.toggleFavorite(property.id) },
+                        onFavoriteClick = { viewModel.toggleFavorite(property.id, context) },
                         onCallClick = { IntentHelper.dialPhone(context, property.ownerPhone) },
                         onWhatsAppClick = {
                             IntentHelper.openWhatsApp(
@@ -668,6 +670,40 @@ fun TrendingPropertyCard(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+            }
+
+            // Photo Preview (via AsyncImage/Coil)
+            val displayPhoto = property.imageUrls.firstOrNull() ?: property.imageUrl
+            if (displayPhoto.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF0F172A))
+                ) {
+                    AsyncImage(
+                        model = displayPhoto,
+                        contentDescription = property.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(bottomStart = 8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Text(
+                            text = "${property.validityDaysRemaining}d left",
+                            color = Color(0xFFFBBF24),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             // Title & Locality
